@@ -58,4 +58,7 @@ public:
 
 	std::string decrypt(const std::string& cipher);
 	std::string decrypt(const char* cipher, unsigned int length);
+	
+	/* Additional function (not part of original file) */
+	static bool validatePrivateKey(const std::string& key);
 };

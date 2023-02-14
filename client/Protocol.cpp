@@ -1,48 +1,30 @@
 #include "Protocol.h"
+#include "Utilities.h"
 
 
-bool isLittleEndian()
+namespace Request
 {
-	static const int num = 1;
-	return (*(char*)&num == 1) ? true : false;
-}
-
-
-template <typename uintX_t>
-void changeEndianness(uintX_t& src)
-{
-	uint8_t buffer[sizeof(uintX_t)] = { 0 };
-	memcpy(buffer, &src, sizeof(uintX_t));
-	std::reverse(buffer, buffer + sizeof(uintX_t));
-	memcpy(&src, buffer, sizeof(uintX_t));
-}
-
-
-namespace REQUEST
-{
-	void packRequestHeader(
-		RequestHeader& request,
+	void RequestHeader::pack(
 		const uint8_t* clientID,
 		const uint8_t version,
 		const uint16_t code,
 		const uint32_t payloadSize
 	)
 	{
-		memcpy(request.clientID, clientID, BYTES_IN_CLIENT_ID);
-		request.version = version;
-		request.code = code;
-		request.payloadSize = payloadSize;
-		if (!isLittleEndian())
+		memcpy(this->clientID, clientID, BYTES_IN_CLIENT_ID);
+		this->version = version;
+		this->code = code;
+		this->payloadSize = payloadSize;
+		if (!Utilities::Endianess::isLittleEndian())
 		{
-			changeEndianness(request.version);
-			changeEndianness(request.code);
-			changeEndianness(request.payloadSize);
+			Utilities::Endianess::changeEndianness(this->version);
+			Utilities::Endianess::changeEndianness(this->code);
+			Utilities::Endianess::changeEndianness(this->payloadSize);
 		}
 	}
 
 
-	void packRequest_ClientNamePayload(
-		Request_ClientNamePayload& request,
+	void Request_ClientNamePayload::pack(
 		const uint8_t* clientID,
 		const uint8_t version,
 		const uint16_t code,
@@ -50,13 +32,12 @@ namespace REQUEST
 		const uint8_t* clientName
 	)
 	{
-		packRequestHeader(request, clientID, version, code, payloadSize);
-		memcpy(request.clientName, clientName, BYTES_IN_CLIENT_NAME);
+		RequestHeader::pack(clientID, version, code, payloadSize);
+		memcpy(this->clientName, clientName, BYTES_IN_CLIENT_NAME);
 	}
 
 
-	void packRequest_FileNamePayload(
-		Request_FileNamePayload& request,
+	void Request_FileNamePayload::pack(
 		const uint8_t* clientID,
 		const uint8_t version,
 		const uint16_t code,
@@ -64,13 +45,12 @@ namespace REQUEST
 		const uint8_t* fileName
 	)
 	{
-		packRequestHeader(request, clientID, version, code, payloadSize);
-		memcpy(request.fileName, fileName, BYTES_IN_FILE_NAME);
+		RequestHeader::pack(clientID, version, code, payloadSize);
+		memcpy(this->fileName, fileName, BYTES_IN_FILE_NAME);
 	}
 
 
-	void packRequest_PublicKeyPayload(
-		Request_PublicKeyPayload& request,
+	void Request_PublicKeyPayload::pack(
 		const uint8_t* clientID,
 		const uint8_t version,
 		const uint16_t code,
@@ -79,14 +59,13 @@ namespace REQUEST
 		const uint8_t* publicKey
 	)
 	{
-		packRequestHeader(request, clientID, version, code, payloadSize);
-		memcpy(request.clientName, clientName, BYTES_IN_CLIENT_NAME);
-		memcpy(request.publicKey, publicKey, BYTES_IN_PUBLIC_KEY);
+		RequestHeader::pack(clientID, version, code, payloadSize);
+		memcpy(this->clientName, clientName, BYTES_IN_CLIENT_NAME);
+		memcpy(this->publicKey, publicKey, BYTES_IN_PUBLIC_KEY);
 	}
 
 
-	void packRequest_FilePayload(
-		Request_FilePayload& request,
+	void Request_FilePayload::pack(
 		const uint8_t* clientID,
 		const uint8_t version,
 		const uint16_t code,
@@ -95,52 +74,49 @@ namespace REQUEST
 		const uint8_t* fileName
 	)
 	{
-		packRequestHeader(request, clientID, version, code, payloadSize);
-		request.contentSize = contentSize;
-		if (!isLittleEndian())
+		RequestHeader::pack(clientID, version, code, payloadSize);
+		this->contentSize = contentSize;
+		if (!Utilities::Endianess::isLittleEndian())
 		{
-			changeEndianness(request.contentSize);
+			Utilities::Endianess::changeEndianness(this->contentSize);
 		}
-		memcpy(request.fileName, fileName, BYTES_IN_FILE_NAME);
+		memcpy(this->fileName, fileName, BYTES_IN_FILE_NAME);
 	}
 }
 
-namespace RESPONSE
+namespace Response
 {
-	void unpackResponseHeader(
-		ResponseHeader& response,
+	void ResponseHeader::unpack(
 		uint8_t& version,
 		uint16_t& code,
 		uint32_t& payloadSize
 	)
 	{
-		version = response.version;
-		code = response.code;
-		payloadSize = response.payloadSize;
-		if (!isLittleEndian())
+		version = this->version;
+		code = this->code;
+		payloadSize = this->payloadSize;
+		if (!Utilities::Endianess::isLittleEndian())
 		{
-			changeEndianness(version);
-			changeEndianness(code);
-			changeEndianness(payloadSize);
+			Utilities::Endianess::changeEndianness(version);
+			Utilities::Endianess::changeEndianness(code);
+			Utilities::Endianess::changeEndianness(payloadSize);
 		}
 	}
 
 
-	void unpackResponse_UuidPayload(
-		Response_UuidPayload& response,
+	void Response_UuidPayload::unpack(
 		uint8_t& version,
 		uint16_t& code,
 		uint32_t& payloadSize,
 		std::vector<uint8_t>& clientID
 	)
 	{
-		unpackResponseHeader(response, version, code, payloadSize);
-		clientID = std::vector<uint8_t>(response.clientID, response.clientID + BYTES_IN_CLIENT_ID);
+		ResponseHeader::unpack(version, code, payloadSize);
+		clientID = std::vector<uint8_t>(this->clientID, this->clientID + BYTES_IN_CLIENT_ID);
 	}
 
 
-	void unpackResponse_EncryptedAesPayload(
-		Response_EncryptedAesPayload& response,
+	void Response_EncryptedAesPayload::unpack(
 		uint8_t& version,
 		uint16_t& code,
 		uint32_t& payloadSize,
@@ -148,14 +124,13 @@ namespace RESPONSE
 		std::vector<uint8_t>& encryptedAesKey
 	)
 	{
-		unpackResponseHeader(response, version, code, payloadSize);
-		clientID = std::vector<uint8_t>(response.clientID, response.clientID + BYTES_IN_CLIENT_ID);
-		encryptedAesKey = std::vector<uint8_t>(response.encryptedAesKey, response.encryptedAesKey + BYTES_IN_ENCRYPTED_AES_KEY);
+		ResponseHeader::unpack(version, code, payloadSize);
+		clientID = std::vector<uint8_t>(this->clientID, this->clientID + BYTES_IN_CLIENT_ID);
+		encryptedAesKey = std::vector<uint8_t>(this->encryptedAesKey, this->encryptedAesKey + BYTES_IN_ENCRYPTED_AES_KEY);
 	}
 
 
-	void unpackResponse_CrcPayload(
-		Response_CrcPayload& response,
+	void Response_CrcPayload::unpack(
 		uint8_t& version,
 		uint16_t& code,
 		uint32_t& payloadSize,
@@ -165,15 +140,15 @@ namespace RESPONSE
 		uint32_t& checkSum
 	)
 	{
-		unpackResponseHeader(response, version, code, payloadSize);
-		clientID = std::vector<uint8_t>(response.clientID, response.clientID + BYTES_IN_CLIENT_ID);
-		contentSize = response.contentSize;
-		fileName = std::string(response.fileName, response.fileName + BYTES_IN_FILE_NAME);
-		checkSum = response.checkSum;
-		if (!isLittleEndian())
+		ResponseHeader::unpack(version, code, payloadSize);
+		clientID = std::vector<uint8_t>(this->clientID, this->clientID + BYTES_IN_CLIENT_ID);
+		contentSize = this->contentSize;
+		fileName = std::string(this->fileName, this->fileName + BYTES_IN_FILE_NAME);
+		checkSum = this->checkSum;
+		if (!Utilities::Endianess::isLittleEndian())
 		{
-			changeEndianness(contentSize);
-			changeEndianness(checkSum);
+			Utilities::Endianess::changeEndianness(contentSize);
+			Utilities::Endianess::changeEndianness(checkSum);
 		}
 	}
 }
