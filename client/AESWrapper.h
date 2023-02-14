@@ -21,4 +21,6 @@ public:
 
 	std::string encrypt(const char* plain, unsigned int length);
 	std::string decrypt(const char* cipher, unsigned int length);
+
+	std::string encryptFile(const std::string& filePath);
 };

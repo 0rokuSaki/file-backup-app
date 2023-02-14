@@ -6,6 +6,9 @@
  * \date   February 2023
  *********************************************************************/
 #pragma once
+#include "CRC.h"
+
+#include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -21,13 +24,13 @@ namespace Utilities
 		}
 
 
-		template <typename uintX_t>
-		void changeEndianness(uintX_t& src)
+		template <typename intType>
+		void changeEndianness(intType& src)
 		{
-			uint8_t buffer[sizeof(uintX_t)] = { 0 };
-			memcpy(buffer, &src, sizeof(uintX_t));
-			std::reverse(buffer, buffer + sizeof(uintX_t));
-			memcpy(&src, buffer, sizeof(uintX_t));
+			uint8_t buffer[sizeof(intType)] = { 0 };
+			memcpy(buffer, &src, sizeof(intType));
+			std::reverse(buffer, buffer + sizeof(intType));
+			memcpy(&src, buffer, sizeof(intType));
 		}
 	}
 
@@ -58,6 +61,49 @@ namespace Utilities
 				ss << std::hex << static_cast<int>(val);
 			}
 			return ss.str();
+		}
+	}
+
+	namespace CRC32
+	{
+		uint32_t calculateCRC32(const std::string& filePath)
+		{
+			std::ifstream file(filePath);
+			if (!file.is_open())
+			{
+				return 0;
+			}
+			constexpr size_t BUFFER_SIZE = 1024;
+			char buffer[BUFFER_SIZE + 1] = { 0 };
+			file.read(buffer, BUFFER_SIZE);
+			uint32_t crc = crc = CRC::Calculate(buffer, strlen(buffer), CRC::CRC_32());
+			while (!file.eof())
+			{
+				memset(buffer, 0, BUFFER_SIZE + 1);
+				file.read(buffer, BUFFER_SIZE);
+				crc = CRC::Calculate(buffer, strlen(buffer), CRC::CRC_32(), crc);
+			}
+			file.close();
+			return crc;
+		}
+	}
+
+	namespace Random
+	{
+		std::string randomString(const size_t length)
+		{
+			auto randchar = []() -> char
+			{
+				const char charset[] =
+					"0123456789"
+					"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+					"abcdefghijklmnopqrstuvwxyz";
+				const size_t max_index = (sizeof(charset) - 1);
+				return charset[rand() % max_index];
+			};
+			std::string str(length, 0);
+			std::generate_n(str.begin(), length, randchar);
+			return str;
 		}
 	}
 }

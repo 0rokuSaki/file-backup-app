@@ -1,8 +1,10 @@
 #include "AESWrapper.h"
+#include "Utilities.h"
 
-#include <modes.h>
 #include <aes.h>
+#include <files.h>
 #include <filters.h>
+#include <modes.h>
 
 #include <stdexcept>
 #include <immintrin.h>	// _rdrand32_step
@@ -65,4 +67,23 @@ std::string AESWrapper::decrypt(const char* cipher, unsigned int length)
 	stfDecryptor.MessageEnd();
 
 	return decrypted;
+}
+
+std::string AESWrapper::encryptFile(const std::string& filePath)
+{
+	const std::string encryptedFilePath = filePath.substr(0, filePath.find_last_of("\\")) + "\\" + Utilities::Random::randomString(32);
+	
+	CryptoPP::byte iv[CryptoPP::AES::BLOCKSIZE] = { 0 };	// for practical use iv should never be a fixed value!
+
+	CryptoPP::AES::Encryption aesEncryption(_key, DEFAULT_KEYLENGTH);
+	CryptoPP::CBC_Mode_ExternalCipher::Encryption cbcEncryption(aesEncryption, iv);
+
+	// Encrypt file
+	CryptoPP::FileSource source(filePath.c_str(), true,
+		new CryptoPP::StreamTransformationFilter(cbcEncryption,
+			new CryptoPP::FileSink(encryptedFilePath.c_str())
+		) // StreamTransformationFilter
+	); // FileSurce
+
+	return encryptedFilePath;
 }

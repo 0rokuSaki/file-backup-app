@@ -20,13 +20,12 @@ namespace Request
 	enum RequestCode
 	{
 		REGISTER =             1100,
-		PUBLIC_KEY =           1101,
+		KEY_EXCHANGE =         1101,
 		LOGIN =                1102,
 		BACKUP_FILE =          1103,
 		CRC_VALID =            1104,
 		CRC_INVALID_RETRYING = 1105,
-		CRC_INVALID_ABORTING = 1106,
-		LAST_OF_REQUEST_CODE = 1107
+		CRC_INVALID_ABORTING = 1106
 	};
 
 	/* Request structures */
@@ -64,8 +63,7 @@ namespace Request
 			const uint8_t* clientID,
 			const uint8_t version,
 			const uint16_t code,
-			const uint32_t payloadSize,
-			const uint8_t* clientName
+			const char* clientName
 		);
 	};
 
@@ -82,8 +80,7 @@ namespace Request
 			const uint8_t* clientID,
 			const uint8_t version,
 			const uint16_t code,
-			const uint32_t payloadSize,
-			const uint8_t* fileName
+			const char* fileName
 		);
 	};
 
@@ -102,8 +99,7 @@ namespace Request
 			const uint8_t* clientID,
 			const uint8_t version,
 			const uint16_t code,
-			const uint32_t payloadSize,
-			const uint8_t* clientName,
+			const char* clientName,
 			const uint8_t* publicKey
 		);
 	};
@@ -122,9 +118,8 @@ namespace Request
 			const uint8_t* clientID,
 			const uint8_t version,
 			const uint16_t code,
-			const uint32_t payloadSize,
 			const uint32_t contentSize,
-			const uint8_t* fileName
+			const char* fileName
 		);
 	};
 #pragma pack(pop)
@@ -136,14 +131,14 @@ namespace Response
 	/* Available response codes */
 	enum ResponseCode
 	{
-		REGISTER_SUCCESS =                     2100,
-		REGISTER_FAILURE =                     2101,
-		PUBLIC_KEY_RECEIVED_SENDING_AES_KEY =  2102,
-		FILE_RECEIVED_SENDING_CRC =            2103,
-		ACKNOWLEDGE =                          2104,
-		LOGIN_SUCCESS_SENDING_AES_KEY =        2105,
-		LOGIN_FAILURE =                        2106,
-		GENERAL_FAILURE =                      2107
+		REGISTER_SUCCESS =     2100,
+		REGISTER_FAILURE =     2101,
+		PUBLIC_KEY_RECEIVED =  2102,
+		FILE_RECEIVED =        2103,
+		ACKNOWLEDGE =          2104,
+		LOGIN_SUCCESS =        2105,
+		LOGIN_FAILURE =        2106,
+		GENERAL_FAILURE =      2107
 	};
 
 	/* Response structures */
@@ -163,24 +158,19 @@ namespace Response
 		);
 	};
 
-	struct Response_UuidPayload : public ResponseHeader
+	struct Response_ClientIDPayload
 	{
 		uint8_t clientID[BYTES_IN_CLIENT_ID];
 
-		Response_UuidPayload()
+		Response_ClientIDPayload()
 		{
 			memset(clientID, 0, BYTES_IN_CLIENT_ID);
 		}
 
-		void unpack(
-			uint8_t& version,
-			uint16_t& code,
-			uint32_t& payloadSize,
-			std::vector<uint8_t>& clientID
-		);
+		void unpack(std::vector<uint8_t>& clientID);
 	};
 
-	struct Response_EncryptedAesPayload : public ResponseHeader
+	struct Response_EncryptedAesPayload
 	{
 		uint8_t clientID[BYTES_IN_CLIENT_ID];
 		uint8_t encryptedAesKey[BYTES_IN_ENCRYPTED_AES_KEY];
@@ -191,16 +181,10 @@ namespace Response
 			memset(encryptedAesKey, 0, BYTES_IN_ENCRYPTED_AES_KEY);
 		}
 
-		void unpack(
-			uint8_t& version,
-			uint16_t& code,
-			uint32_t& payloadSize,
-			std::vector<uint8_t>& clientID,
-			std::vector<uint8_t>& encryptedAesKey
-		);
+		void unpack(std::vector<uint8_t>& clientID, std::vector<uint8_t>& encryptedAesKey);
 	};
 
-	struct Response_CrcPayload : public ResponseHeader
+	struct Response_CrcPayload
 	{
 		uint8_t clientID[BYTES_IN_CLIENT_ID];
 		uint32_t contentSize;
@@ -213,15 +197,7 @@ namespace Response
 			memset(fileName, 0, BYTES_IN_FILE_NAME);
 		}
 		
-		void unpack(
-			uint8_t& version,
-			uint16_t& code,
-			uint32_t& payloadSize,
-			std::vector<uint8_t>& clientID,
-			uint32_t& contentSize,
-			std::string& fileName,
-			uint32_t& checkSum
-		);
+		void unpack(std::vector<uint8_t>& clientID, uint32_t& contentSize, std::string& fileName, uint32_t& checkSum);
 	};
 #pragma pack(pop)
 }

@@ -118,20 +118,3 @@ std::string RSAPrivateWrapper::decrypt(const char* cipher, unsigned int length)
 	CryptoPP::StringSource ss_cipher(reinterpret_cast<const CryptoPP::byte*>(cipher), length, true, new CryptoPP::PK_DecryptorFilter(_rng, d, new CryptoPP::StringSink(decrypted)));
 	return decrypted;
 }
-
-/* Additional function (not part of original file) */
-bool RSAPrivateWrapper::validatePrivateKey(const std::string& key)
-{
-	try
-	{
-		constexpr int VALIDATION_LEVEL = 2;
-		CryptoPP::RSA::PrivateKey rsaPrivate;
-		rsaPrivate.Load(CryptoPP::StringSource(key, true).Ref());
-		CryptoPP::AutoSeededRandomPool prng;
-		return rsaPrivate.Validate(prng, VALIDATION_LEVEL);
-	}
-	catch (...)
-	{
-		return false;
-	}
-}
