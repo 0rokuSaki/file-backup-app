@@ -189,9 +189,9 @@ namespace Response
 		uint8_t clientID[BYTES_IN_CLIENT_ID];
 		uint32_t contentSize;
 		uint8_t fileName[BYTES_IN_FILE_NAME];
-		uint32_t checkSum;
+		uint32_t checksum;
 
-		Response_CrcPayload() : contentSize(0), checkSum(0)
+		Response_CrcPayload() : contentSize(0), checksum(0)
 		{
 			memset(clientID, 0, BYTES_IN_CLIENT_ID);
 			memset(fileName, 0, BYTES_IN_FILE_NAME);

@@ -10,6 +10,7 @@
 
 #include <fstream>
 #include <sstream>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -17,7 +18,7 @@ namespace Utilities
 {
 	namespace Endianess
 	{
-		inline bool isLittleEndian()
+		static inline bool isLittleEndian()
 		{
 			const int num = 1;
 			return (*(char*)&num == 1) ? true : false;
@@ -25,7 +26,7 @@ namespace Utilities
 
 
 		template <typename intType>
-		void changeEndianness(intType& src)
+		static void changeEndianness(intType& src)
 		{
 			uint8_t buffer[sizeof(intType)] = { 0 };
 			memcpy(buffer, &src, sizeof(intType));
@@ -36,19 +37,19 @@ namespace Utilities
 
 	namespace UUID
 	{
-		constexpr size_t UUID_SIZE = 16;
-		const std::vector<uint8_t> convertUuidFromAsciiToRaw(const std::string& uuidASCII)
+		static constexpr size_t UUID_SIZE = 16;
+		static const std::vector<uint8_t> convertUuidFromAsciiToRaw(const std::string& uuidASCII)
 		{
 			std::vector<uint8_t> buffer(UUID_SIZE);
 			for (int i = 0; i < UUID_SIZE * 2; i += 2)
 			{
-				buffer[i / 2] = static_cast<uint8_t>(strtoul(uuidASCII.substr(i, 2).c_str(), nullptr, std::ios_base::hex));
+				buffer[i / 2] = static_cast<uint8_t>(strtoul(uuidASCII.substr(i, 2).c_str(), nullptr, 16));
 			}
 			return buffer;
 		}
 
 
-		const std::string convertUuidFromRawToAscii(const std::vector<uint8_t>& uuidRAW)
+		static const std::string convertUuidFromRawToAscii(const std::vector<uint8_t>& uuidRAW)
 		{
 			std::stringstream ss;
 			for (int i = 0; i < UUID_SIZE; ++i)
@@ -66,13 +67,11 @@ namespace Utilities
 
 	namespace CRC32
 	{
-		uint32_t calculateCRC32(const std::string& filePath)
+		static uint32_t calculateFileCRC(const std::string& filePath)
 		{
-			std::ifstream file(filePath);
-			if (!file.is_open())
-			{
-				return 0;
-			}
+			std::ifstream file;
+			file.exceptions(std::ios::badbit);
+			file.open(filePath);
 			constexpr size_t BUFFER_SIZE = 1024;
 			char buffer[BUFFER_SIZE + 1] = { 0 };
 			file.read(buffer, BUFFER_SIZE);
@@ -90,7 +89,7 @@ namespace Utilities
 
 	namespace Random
 	{
-		std::string randomString(const size_t length)
+		static std::string randomString(const size_t length)
 		{
 			auto randchar = []() -> char
 			{

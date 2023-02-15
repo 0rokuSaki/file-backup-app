@@ -13,9 +13,10 @@
 
 
 ClientLogic::ClientLogic(const std::string& rootPath) : 
-    _rootPath(rootPath), _checksum(0),
+    _rootPath(rootPath), _checksum(0), _needToRegister(false),
     _rsaPrivateWrapper(nullptr), _aesWrapper(nullptr)
 {
+    std::cout << "[ClientLogic] Created ClientLogic with root path: " + _rootPath << std::endl;
 }
 
 ClientLogic::~ClientLogic()
@@ -24,16 +25,250 @@ ClientLogic::~ClientLogic()
     delete _aesWrapper;
 }
 
-void ClientLogic::run()
+bool ClientLogic::initialize()
 {
+    std::cout << "[Initialize] beginning initialization phase" << std::endl;
+    std::stringstream errorMessage;
+    /* Parse transfer.info file */
+    if (!parseTransferInfo(errorMessage))
+    {
+        // transfer.info might not exist or is corrupted
+        std::cerr << "[Initialize] Error parsing transfer.info: " << errorMessage.str() << std::endl;
+        return false;
+    }
+    // transfer.info parsed successfuly
+    std::cout << "[Initialize] Success parsing transfer.info with the following parameters:\n"
+        "             (1) Host address: " << _hostAddress << "\n"
+        "             (2) Host port: " << _hostPort << "\n"
+        "             (3) Client name: " << _clientName << "\n"
+        "             (4) File name: " << _fileName << std::endl;
+
+    /* Parse me.info file */
+    if (boost::filesystem::exists(_rootPath + "\\me.info"))
+    {
+        if (!parseMeInfo(errorMessage))  // me.info exists, parse it
+        {
+            // me.info info is corrupted
+            std::cerr << "[Initialize] Error parsing me.info: " << errorMessage.str() << std::endl;
+            return false;
+        }
+        std::cout << "[Initialize] Success parsing me.info with the following parameters:\n"
+            "             (1) Client name: " << _clientName << "\n"
+            "             (2) Client ID: " << Utilities::UUID::convertUuidFromRawToAscii(_clientID) << "\n"
+            "             (3) Private key is valid" << std::endl;
+        _needToRegister = false;
+    }
+    else
+    {
+        _needToRegister = true;
+    }
+
+    // Check file size according to the following formula:
+    // cipherLen = ( cleanLen/16 + 1) * 16
+    // AES block size is 16
+    const size_t fileSize = boost::filesystem::file_size(_rootPath + "\\" + _fileName);
+    const size_t encryptedFileSize = (fileSize / 16 + 1) * 16;
+    if (encryptedFileSize > _maxTransferSize)
+    {
+        std::cerr << "[Initialize] File is too large to transfer (file size = " << fileSize << ", max size = " << _maxTransferSize << ")";
+        return false;
+    }
+    std::cout << "[Initialize] Size of file: " << _fileName << " is: " << fileSize << " bytes" << std::endl;
+    std::cout << "[Initialize] Size of file: " << _fileName << " after encryption is: " << encryptedFileSize << " bytes" << std::endl;
+
+    /* Calculate CRC of file */
+    try
+    {
+        _checksum = Utilities::CRC32::calculateFileCRC(_rootPath + "\\" + _fileName);
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "[Initialize] Error calculating checksum of file: " << _fileName <<
+            " (Exception: " << e.what() << ")" << std::endl;
+        return false;
+    }
+    std::cout << "[Initialize] Success calculating checksum of file: " << _fileName <<
+        " (checksum = " << _checksum << ")" << std::endl;
+
+    std::cout << "[Initialize] Finished initialization phase" << std::endl;
+    return true;
+}
+
+bool ClientLogic::run()
+{
+    std::cout << "[Runtime] Beginning runtime phase" << std::endl;
+    bool success = false;
     boost::asio::io_context io_context;
     tcp::socket socket(io_context);
     tcp::resolver resolver(io_context);
+
+    try
+    {
+        std::cout << "[Runtime] Connecting to server " << _hostAddress << ":" << _hostPort << std::endl;
+        boost::asio::connect(socket, resolver.resolve(_hostAddress, _hostPort));
+        std::cout << "[Runtime] Successfully connected to server" << std::endl;
+
+        constexpr int NUMBER_OF_RETRIES = 3;
+        bool finished = false;
+        int retryCount;
+        uint16_t rc = 0;
+        Request::RequestCode currentRequest = _needToRegister ? Request::REGISTER : Request::LOGIN;
+        while (!finished)
+        {
+            for (retryCount = 0; retryCount < NUMBER_OF_RETRIES; ++retryCount)
+            {
+                if (Request::REGISTER == currentRequest)
+                {
+                    rc = handleRegistration(socket);
+                    if (Response::REGISTER_SUCCESS == rc)
+                    {
+                        currentRequest = Request::KEY_EXCHANGE;
+                        break;
+                    }
+                    if (Response::REGISTER_FAILURE == rc)
+                    {
+                        throw std::runtime_error("Failed to register to server");
+                    }
+                    if (Response::GENERAL_FAILURE == rc);  // Retry
+                    else
+                    {
+                        throw std::runtime_error("Server's response code does not match protocol");
+                    }
+                }
+                else if (Request::LOGIN == currentRequest)
+                {
+                    rc = handleLogin(socket);
+                    if (Response::LOGIN_SUCCESS == rc)
+                    {
+                        currentRequest = Request::BACKUP_FILE;
+                        break;
+                    }
+                    else if (Response::LOGIN_FAILURE == rc)
+                    {
+                        currentRequest = Request::REGISTER;
+                        break;
+                    }
+                    else if (Response::GENERAL_FAILURE == rc);  // Retry
+                    else
+                    {
+                        throw std::runtime_error("Server's response code does not match protocol");
+                    }
+                }
+                else if (currentRequest == Request::KEY_EXCHANGE)
+                {
+                    rc = handleKeyExchange(socket);
+                    if (Response::PUBLIC_KEY_RECEIVED == rc)
+                    {
+                        currentRequest = Request::BACKUP_FILE;
+                        break;
+                    }
+                    else if (Response::GENERAL_FAILURE == rc);  // Retry
+                    else
+                    {
+                        throw std::runtime_error("Server's response code does not match protocol");
+                    }
+                }
+                else if (currentRequest == Request::BACKUP_FILE)
+                {
+                    uint32_t checksum;
+                    rc = handleFileBackup(socket, checksum);
+                    if (Response::FILE_RECEIVED == rc)
+                    {
+                        if (_checksum == checksum)
+                        {
+                            currentRequest = Request::CRC_VALID;
+                            break;
+                        }
+                        else
+                        {
+                            currentRequest = Request::CRC_INVALID_RETRYING;
+                            break;
+                        }
+                    }
+                    else if (Response::GENERAL_FAILURE == rc);  // Retry
+                    else
+                    {
+                        throw std::runtime_error("Server's response code does not match protocol");
+                    }
+                }
+                else if (currentRequest == Request::CRC_VALID)
+                {
+                    rc = handleValidCRC(socket);
+                    if (Response::ACKNOWLEDGE == rc)
+                    {
+                        success = true;
+                        finished = true;
+                        break;
+                    }
+                    else if (Response::GENERAL_FAILURE == rc);  // Retry
+                    else
+                    {
+                        throw std::runtime_error("Server's response code does not match protocol");
+                    }
+                }
+                else if (currentRequest == Request::CRC_INVALID_RETRYING)
+                {
+                    uint32_t checksum;
+                    rc = handleInvalidCRC(socket, checksum);
+                    if (Response::FILE_RECEIVED == rc)
+                    {
+                        if (_checksum == checksum)
+                        {
+                            currentRequest = Request::CRC_VALID;
+                            break;
+                        }
+                        else
+                        {
+                            std::cout << "[Runtime] CRC is invalid. Retrying... (retry count = " << retryCount << ")" << std::endl;
+                            continue;
+                        }
+                    }
+                    else if (Response::GENERAL_FAILURE == rc);  // Retry
+                    else
+                    {
+                        throw std::runtime_error("Server's response code does not match protocol");
+                    }
+                }
+                else if (currentRequest == Request::CRC_INVALID_ABORTING)
+                {
+                    rc = handleAbort(socket);
+                    if (Response::ACKNOWLEDGE == rc)
+                    {
+                        finished = true;
+                        break;
+                    }
+                    if (Response::GENERAL_FAILURE == rc);  // Retry
+                    else
+                    {
+                        throw std::runtime_error("Server's response code does not match protocol");
+                    }
+                }
+
+                std::cout << "[Runtime] Server responded with an error (request code = " << currentRequest <<
+                    "). Retrying... (retry count = " << retryCount << ")" << std::endl;
+            }
+            if (NUMBER_OF_RETRIES == retryCount)
+            {
+                throw std::runtime_error("Maximum number of retries reached (request code = " + std::to_string(currentRequest) + ")");
+            }
+        }
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "[Exception] " << e.what() << std::endl;
+    }
+    std::cout << "[Runtime] Beginning runtime phase" << std::endl;
+    return success;
 }
 
-bool ClientLogic::parseTransferInfo()
+bool ClientLogic::parseTransferInfo(std::stringstream& errorMessage)
 {
     std::ifstream transferInfoFile(_rootPath + "\\transfer.info");
+    if (!transferInfoFile.is_open())
+    {
+        errorMessage << "Could not open transfer.info";
+        return false;
+    }
     std::string hostAddress, hostPort;
 
     /* Parse host ip */
@@ -42,6 +277,7 @@ bool ClientLogic::parseTransferInfo()
     boost::asio::ip::address::from_string(hostAddress, ec);
     if (ec)  // Make sure this is a valid ip address
     {
+        errorMessage << "Invalid IP address: " << hostAddress;
         transferInfoFile.close();
         return false;
     }
@@ -53,6 +289,7 @@ bool ClientLogic::parseTransferInfo()
     {
         if (!isdigit(hostPort[i]))
         {
+            errorMessage << "Invalid port number: " << hostPort;
             transferInfoFile.close();
             return false;
         }
@@ -60,6 +297,7 @@ bool ClientLogic::parseTransferInfo()
     int32_t port = std::stoi(hostPort);
     if (port < 1 || port > UINT16_MAX)
     {
+        errorMessage << "Invalid port number: " << hostPort;
         transferInfoFile.close();
         return false;
     }
@@ -70,6 +308,7 @@ bool ClientLogic::parseTransferInfo()
     std::getline(transferInfoFile, clientName);
     if (clientName.empty() || clientName.size() > _maxClientNameLength)
     {
+        errorMessage << "Invalid client name";
         transferInfoFile.close();
         return false;
     }
@@ -78,8 +317,9 @@ bool ClientLogic::parseTransferInfo()
     /* Parse file name */
     std::string fileName;
     std::getline(transferInfoFile, fileName);
-    if (!boost::filesystem::exists(_rootPath + "\\" + fileName) && fileName.size() > BYTES_IN_FILE_NAME)
+    if (!boost::filesystem::exists(_rootPath + "\\" + fileName) || fileName.size() > BYTES_IN_FILE_NAME)
     {
+        errorMessage << "Invalid file name";
         transferInfoFile.close();
         return false;
     }
@@ -89,15 +329,21 @@ bool ClientLogic::parseTransferInfo()
     return true;
 }
 
-bool ClientLogic::parseMeInfo()
+bool ClientLogic::parseMeInfo(std::stringstream& errorMessage)
 {
     std::ifstream meInfoFile(_rootPath + "\\me.info");
+    if (!meInfoFile.is_open())
+    {
+        errorMessage << "Could not open me.info";
+        return false;
+    }
 
     /* Parse client name */
     std::string clientNameMeInfo;
     std::getline(meInfoFile, clientNameMeInfo);
     if (_clientName != clientNameMeInfo)
     {
+        errorMessage << "Client name in me.info does not match client name in transfer.info";
         meInfoFile.close();
         return false;
     }
@@ -107,6 +353,7 @@ bool ClientLogic::parseMeInfo()
     std::getline(meInfoFile, clientID_ASCII);
     if (clientID_ASCII.size() != (BYTES_IN_CLIENT_ID * 2))
     {
+        errorMessage << "Invalid client ID";
         meInfoFile.close();
         return false;
     }
@@ -123,7 +370,7 @@ bool ClientLogic::parseMeInfo()
     }
     catch (const std::exception& e)
     {
-        std::cerr << "Exception: " << e.what() << std::endl;
+        errorMessage << "Invalid private key (Exception: " << e.what() << ")";
         meInfoFile.close();
         return false;
     }
@@ -133,196 +380,271 @@ bool ClientLogic::parseMeInfo()
     return true;
 }
 
-Response::ResponseCode ClientLogic::handleLogin(tcp::socket& s)
+uint16_t ClientLogic::handleLogin(tcp::socket& s)
 {
     // TODO: add printings
-    try
+    /* Send login request */
+    Request::Request_ClientNamePayload request;
+    request.pack(_clientID.data(), _version, Request::LOGIN, _clientName.c_str());
+    boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
+
+    /* Receive response header */
+    uint8_t serverVersion;
+    uint16_t responseCode;
+    uint32_t payloadSize;
+    Response::ResponseHeader responseHeader;
+    boost::asio::read(s, boost::asio::buffer(&responseHeader, sizeof(responseHeader)));
+    responseHeader.unpack(serverVersion, responseCode, payloadSize);
+
+    /* Analize response */
+    if (Response::LOGIN_SUCCESS == responseCode)
     {
-        /* Send login request */
-        Request::Request_ClientNamePayload request;
-        request.pack(_clientID.data(), _version, Request::LOGIN, _clientName.c_str());
-        boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
+        /* Receive response payload */
+        std::vector<uint8_t> clientID, encryptedAesKey;
+        Response::Response_EncryptedAesPayload responsePayload;
+        boost::asio::read(s, boost::asio::buffer(&responsePayload, sizeof(responsePayload)));
+        responsePayload.unpack(clientID, encryptedAesKey);
 
-        /* Receive response header */
-        uint8_t serverVersion;
-        uint16_t responseCode;
-        uint32_t payloadSize;
-        Response::ResponseHeader responseHeader;
-        boost::asio::read(s, boost::asio::buffer(&responseHeader, sizeof(responseHeader)));
-        responseHeader.unpack(serverVersion, responseCode, payloadSize);
-
-        /* Analize response */
-        if (Response::LOGIN_SUCCESS == responseCode)
+        /* Validate arguments */
+        if (_clientID != clientID)
         {
-            /* Receive response payload */
-            std::vector<uint8_t> clientID, encryptedAesKey;
-            Response::Response_EncryptedAesPayload responsePayload;
-            boost::asio::read(s, boost::asio::buffer(&responsePayload, sizeof(responsePayload)));
-            responsePayload.unpack(clientID, encryptedAesKey);
-
-            /* Validate arguments */
-            if (_clientID != clientID)
-            {
-                throw std::invalid_argument("Client ID received from server is incorrect.");
-            }
-
-            /* Parse encrypted AES key */
-            std::string decryptedAesKey = _rsaPrivateWrapper->decrypt((char*)encryptedAesKey.data(), encryptedAesKey.size());
-            _aesWrapper = new AESWrapper((uint8_t*)decryptedAesKey.c_str(), decryptedAesKey.size());
-
-            return Response::LOGIN_SUCCESS;
+            throw std::invalid_argument("Client ID received from server is incorrect.");
         }
-        else if (Response::LOGIN_FAILURE == responseCode)
-        {
-            /* Receive response payload */
-            std::vector<uint8_t> clientID;
-            Response::Response_ClientIDPayload responsePayload;
-            boost::asio::read(s, boost::asio::buffer(&responsePayload, sizeof(responsePayload)));
 
-            /* Validate arguments */
-            if (_clientID != clientID)
-            {
-                throw std::invalid_argument("Client ID received from server is incorrect.");
-            }
-            return Response::LOGIN_FAILURE;
-        }
-        /* All other response codes are treated as 'Response::GENERAL_FAILURE'. */
+        /* Parse encrypted AES key */
+        std::string decryptedAesKey = _rsaPrivateWrapper->decrypt((char*)encryptedAesKey.data(), BYTES_IN_ENCRYPTED_AES_KEY);
+        _aesWrapper = new AESWrapper((uint8_t*)decryptedAesKey.c_str(), BYTES_IN_AES_KEY);
     }
-    catch (const std::exception& e)
+    else if (Response::LOGIN_FAILURE == responseCode)
     {
-        std::cerr << "Exception: " << e.what() << std::endl;
+        /* Receive response payload */
+        std::vector<uint8_t> clientID;
+        Response::Response_ClientIDPayload responsePayload;
+        boost::asio::read(s, boost::asio::buffer(&responsePayload, sizeof(responsePayload)));
+
+        /* Validate arguments */
+        if (_clientID != clientID)
+        {
+            throw std::invalid_argument("Client ID received from server is incorrect.");
+        }
     }
-    return Response::GENERAL_FAILURE;
+    return responseCode;
 }
 
-Response::ResponseCode ClientLogic::handleRegistration(tcp::socket& s)
+uint16_t ClientLogic::handleRegistration(tcp::socket& s)
 {
     // TODO: add printings
-    try
+    /* Send registration request */
+    Request::Request_ClientNamePayload request;
+    uint8_t nullID[BYTES_IN_CLIENT_ID] = { 0 };
+    request.pack(nullID, _version, Request::REGISTER, _clientName.c_str());
+    boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
+
+    /* Receive response header */
+    uint8_t serverVersion;
+    uint16_t responseCode;
+    uint32_t payloadSize;
+    Response::ResponseHeader responseHeader;
+    boost::asio::read(s, boost::asio::buffer(&responseHeader, sizeof(responseHeader)));
+    responseHeader.unpack(serverVersion, responseCode, payloadSize);
+
+    /* Analize response */
+    if (Response::REGISTER_SUCCESS == responseCode)
     {
-        /* Send registration request */
-        Request::Request_ClientNamePayload request;
-        uint8_t nullID[BYTES_IN_CLIENT_ID] = { 0 };
-        request.pack(nullID, _version, Request::REGISTER, _clientName.c_str());
-        boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
+        /* Receive response payload */
+        Response::Response_ClientIDPayload responsePayload;
+        boost::asio::read(s, boost::asio::buffer(&responsePayload, sizeof(responsePayload)));
+        responsePayload.unpack(_clientID);
 
-        /* Receive response header */
-        uint8_t serverVersion;
-        uint16_t responseCode;
-        uint32_t payloadSize;
-        Response::ResponseHeader responseHeader;
-        boost::asio::read(s, boost::asio::buffer(&responseHeader, sizeof(responseHeader)));
-        responseHeader.unpack(serverVersion, responseCode, payloadSize);
+        // TODO: Need to create me.info
 
-        /* Analize response */
-        if (Response::REGISTER_SUCCESS == responseCode)
-        {
-            /* Receive response payload */
-            Response::Response_ClientIDPayload responsePayload;
-            boost::asio::read(s, boost::asio::buffer(&responsePayload, sizeof(responsePayload)));
-            responsePayload.unpack(_clientID);
-
-            return Response::REGISTER_SUCCESS;
-        }
-        else if (Response::REGISTER_FAILURE == responseCode)
-        {
-            return Response::REGISTER_FAILURE;
-        }
-        /* All other response codes are treated as 'Response::GENERAL_FAILURE'. */
+        return Response::REGISTER_SUCCESS;
     }
-    catch (const std::exception& e)
-    {
-        std::cerr << "Exception: " << e.what() << std::endl;
-    }
-    return Response::GENERAL_FAILURE;
+    return responseCode;
 }
 
-Response::ResponseCode ClientLogic::handleKeyExchange(tcp::socket& s)
+uint16_t ClientLogic::handleKeyExchange(tcp::socket& s)
 {
     // TODO: add printings
-    try
+    /* Send key exchange request */
+    Request::Request_PublicKeyPayload request;
+    request.pack(_clientID.data(), _version, Request::LOGIN, _clientName.c_str(), (uint8_t*)_rsaPrivateWrapper->getPublicKey().c_str());
+    boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
+
+    /* Receive response header */
+    uint8_t serverVersion;
+    uint16_t responseCode;
+    uint32_t payloadSize;
+    Response::ResponseHeader responseHeader;
+    boost::asio::read(s, boost::asio::buffer(&responseHeader, sizeof(responseHeader)));
+    responseHeader.unpack(serverVersion, responseCode, payloadSize);
+
+    if (Response::PUBLIC_KEY_RECEIVED == responseCode)
     {
-        /* Send key exchange request */
-        Request::Request_PublicKeyPayload request;
-        request.pack(_clientID.data(), _version, Request::LOGIN, _clientName.c_str(), (uint8_t*)_rsaPrivateWrapper->getPublicKey().c_str());
-        boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
+        /* Receive response payload */
+        std::vector<uint8_t> clientID, encryptedAesKey;
+        Response::Response_EncryptedAesPayload responsePayload;
+        boost::asio::read(s, boost::asio::buffer(&responsePayload, sizeof(responsePayload)));
+        responsePayload.unpack(clientID, encryptedAesKey);
 
-        /* Receive response header */
-        uint8_t serverVersion;
-        uint16_t responseCode;
-        uint32_t payloadSize;
-        Response::ResponseHeader responseHeader;
-        boost::asio::read(s, boost::asio::buffer(&responseHeader, sizeof(responseHeader)));
-        responseHeader.unpack(serverVersion, responseCode, payloadSize);
-
-        if (Response::PUBLIC_KEY_RECEIVED == responseCode)
+        /* Validate arguments */
+        if (_clientID != clientID)
         {
-            /* Receive response payload */
-            std::vector<uint8_t> clientID, encryptedAesKey;
-            Response::Response_EncryptedAesPayload responsePayload;
-            boost::asio::read(s, boost::asio::buffer(&responsePayload, sizeof(responsePayload)));
-            responsePayload.unpack(clientID, encryptedAesKey);
-
-            /* Validate arguments */
-            if (_clientID != clientID)
-            {
-                throw std::invalid_argument("Client ID received from server is incorrect.");
-            }
-
-            /* Parse encrypted AES key */
-            std::string decryptedAesKey = _rsaPrivateWrapper->decrypt((char*)encryptedAesKey.data(), encryptedAesKey.size());
-            _aesWrapper = new AESWrapper((uint8_t*)decryptedAesKey.c_str(), decryptedAesKey.size());
-
-            return Response::PUBLIC_KEY_RECEIVED;
+            throw std::invalid_argument("Client ID received from server is incorrect");
         }
-        /* All other response codes are treated as 'Response::GENERAL_FAILURE'. */
+
+        /* Parse encrypted AES key */
+        std::string decryptedAesKey = _rsaPrivateWrapper->decrypt((char*)encryptedAesKey.data(), BYTES_IN_ENCRYPTED_AES_KEY);
+        _aesWrapper = new AESWrapper((uint8_t*)decryptedAesKey.c_str(), BYTES_IN_AES_KEY);
     }
-    catch (const std::exception& e)
-    {
-        std::cerr << "Exception: " << e.what() << std::endl;
-    }
-    return Response::GENERAL_FAILURE;
+    return responseCode;
 }
 
-Response::ResponseCode ClientLogic::handleFileBackup(tcp::socket& s, const std::string& filePath)
+uint16_t ClientLogic::handleFileBackup(tcp::socket& s, uint32_t& checksum)
 {
-    std::ifstream file;
-    try
+    // TODO: add printings
+
+    /* Encrypt file before sending */
+    const std::string encryptedFilePath = _aesWrapper->encryptFile(_rootPath + "\\" + _fileName);
+    const size_t encryptedFileSize = boost::filesystem::file_size(encryptedFilePath);
+
+    /* Open the encrypted file for reading */
+    std::ifstream encryptedFile;
+    encryptedFile.exceptions(std::ios::badbit);
+    encryptedFile.open(encryptedFilePath);
+
+    /* Send file backup request */
+    Request::Request_FilePayload request;
+    request.pack(_clientID.data(), _version, Request::BACKUP_FILE, static_cast<uint32_t>(encryptedFileSize), _fileName.c_str());
+    boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
+
+    /* Send the file itself */
+    constexpr size_t PACKET_SIZE = 1024;
+    char buffer[PACKET_SIZE] = { 0 };
+    size_t bytesRemaining = encryptedFileSize;
+
+    while (bytesRemaining)
     {
-        // TODO: Need to validate file size before sending.
-        // TODO: Need to calculate CRC before sending.
-        // TODO: Need to encrypt file before sending.
+        memset(buffer, 0, PACKET_SIZE);
+        size_t bufferSize = std::min(bytesRemaining, static_cast<size_t>(PACKET_SIZE));
+        encryptedFile.read(buffer, bufferSize);
+        bytesRemaining -= boost::asio::write(s, boost::asio::buffer(buffer, bufferSize));
+    }
+    encryptedFile.close();
+    boost::filesystem::remove(encryptedFilePath);
 
-        /* Send file backup request */
-        Request::Request_FilePayload request;
-        const size_t fileSize = boost::filesystem::file_size(filePath);
-        request.pack(_clientID.data(), _version, Request::BACKUP_FILE, static_cast<uint32_t>(fileSize), _fileName.c_str());
-        boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
+    /* Receive response header */
+    uint8_t serverVersion;
+    uint16_t responseCode;
+    uint32_t payloadSize;
+    Response::ResponseHeader responseHeader;
+    boost::asio::read(s, boost::asio::buffer(&responseHeader, sizeof(responseHeader)));
+    responseHeader.unpack(serverVersion, responseCode, payloadSize);
 
-        /* Send the file itself */
-        file.open(filePath, std::ifstream::binary);
-        if (!file.is_open())
+    if (Response::FILE_RECEIVED == responseCode)
+    {
+        /* Receive response payload */
+        std::vector<uint8_t> clientID;
+        std::string fileName;
+        uint32_t contentSize;
+        Response::Response_CrcPayload responsePayload;
+        boost::asio::read(s, boost::asio::buffer(&responsePayload, sizeof(responsePayload)));
+        responsePayload.unpack(clientID, contentSize, fileName, checksum);
+
+        /* Validate arguments */
+        if (_clientID != clientID)
         {
-            return Response::GENERAL_FAILURE;
+            throw std::invalid_argument("Client ID received from server is incorrect");
+        }
+        if (_fileName != fileName)
+        {
+            throw std::invalid_argument("File name received from server is incorrect");
+        }
+        if (encryptedFileSize != contentSize)
+        {
+            throw std::invalid_argument("Content size received from server is incorrect");
+        }
+    }
+    return responseCode;
+}
+
+uint16_t ClientLogic::handleValidCRC(tcp::socket& s)
+{
+    // TODO: add printings
+    /* Send CRC valid request */
+    Request::Request_FileNamePayload request;
+    request.pack(_clientID.data(), _version, Request::CRC_VALID, _fileName.c_str());
+    boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
+
+    /* Receive response header */
+    uint8_t serverVersion;
+    uint16_t responseCode;
+    uint32_t payloadSize;
+    Response::ResponseHeader responseHeader;
+    boost::asio::read(s, boost::asio::buffer(&responseHeader, sizeof(responseHeader)));
+    responseHeader.unpack(serverVersion, responseCode, payloadSize);
+
+    if (Response::ACKNOWLEDGE == responseCode)
+    {
+        /* Receive response payload */
+        std::vector<uint8_t> clientID;
+        Response::Response_ClientIDPayload responsePayload;
+        boost::asio::read(s, boost::asio::buffer(&responsePayload, sizeof(responsePayload)));
+        responsePayload.unpack(clientID);
+
+        /* Validate arguments */
+        if (_clientID != clientID)
+        {
+            throw std::invalid_argument("Client ID received from server is incorrect");
+        }
+    }
+    return responseCode;
+}
+
+uint16_t ClientLogic::handleInvalidCRC(tcp::socket& s, uint32_t& checksum)
+{
+    // TODO: add printings
+    /* Send CRC invalid request */
+    Request::Request_FileNamePayload request;
+    request.pack(_clientID.data(), _version, Request::CRC_INVALID_RETRYING, _fileName.c_str());
+    boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
+
+    /* Send the file again */
+    return handleFileBackup(s, checksum);
+}
+
+uint16_t ClientLogic::handleAbort(tcp::socket& s)
+{
+    // TODO: add printings
+
+    /* Send CRC valid request */
+    Request::Request_FileNamePayload request;
+    request.pack(_clientID.data(), _version, Request::CRC_INVALID_ABORTING, _fileName.c_str());
+    boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
+
+    /* Receive response header */
+    uint8_t serverVersion;
+    uint16_t responseCode;
+    uint32_t payloadSize;
+    Response::ResponseHeader responseHeader;
+    boost::asio::read(s, boost::asio::buffer(&responseHeader, sizeof(responseHeader)));
+    responseHeader.unpack(serverVersion, responseCode, payloadSize);
+
+    if (Response::ACKNOWLEDGE == responseCode)
+    {
+        /* Receive response payload */
+        std::vector<uint8_t> clientID;
+        Response::Response_ClientIDPayload responsePayload;
+        boost::asio::read(s, boost::asio::buffer(&responsePayload, sizeof(responsePayload)));
+        responsePayload.unpack(clientID);
+
+        /* Validate arguments */
+        if (_clientID != clientID)
+        {
+            throw std::invalid_argument("Client ID received from server is incorrect");
         }
 
-        constexpr size_t PACKET_SIZE = 1024;
-        char buffer[PACKET_SIZE] = { 0 };
-        size_t bytesRemaining = fileSize;
-
-        while (bytesRemaining)
-        {
-            memset(buffer, 0, PACKET_SIZE);
-            size_t bufferSize = std::min(bytesRemaining, static_cast<size_t>(PACKET_SIZE));
-            file.read(buffer, bufferSize);
-            bytesRemaining -= boost::asio::write(s, boost::asio::buffer(buffer, bufferSize));
-        }
-        file.close();
+        return Response::ACKNOWLEDGE;
     }
-    catch (const std::exception& e)
-    {
-        std::cerr << "Exception: " << e.what() << std::endl;
-    }
-    file.close();
-    return Response::GENERAL_FAILURE;
+    return responseCode;
 }

@@ -1,4 +1,6 @@
+#pragma once
 #include "AESWrapper.h"
+
 #include "Utilities.h"
 
 #include <aes.h>

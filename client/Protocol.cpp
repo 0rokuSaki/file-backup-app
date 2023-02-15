@@ -113,16 +113,16 @@ namespace Response
 	}
 
 
-	void Response_CrcPayload::unpack(std::vector<uint8_t>& clientID, uint32_t& contentSize, std::string& fileName, uint32_t& checkSum)
+	void Response_CrcPayload::unpack(std::vector<uint8_t>& clientID, uint32_t& contentSize, std::string& fileName, uint32_t& checksum)
 	{
 		clientID = std::vector<uint8_t>(this->clientID, this->clientID + BYTES_IN_CLIENT_ID);
 		contentSize = this->contentSize;
 		fileName = std::string(this->fileName, this->fileName + BYTES_IN_FILE_NAME);
-		checkSum = this->checkSum;
+		checksum = this->checksum;
 		if (!Utilities::Endianess::isLittleEndian())
 		{
 			Utilities::Endianess::changeEndianness(contentSize);
-			Utilities::Endianess::changeEndianness(checkSum);
+			Utilities::Endianess::changeEndianness(checksum);
 		}
 	}
 }
