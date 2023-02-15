@@ -5,12 +5,20 @@
 
 #include <boost/filesystem.hpp>
 
-#include <iostream>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
 
+
+void printResponseHeader(const uint8_t serverVersion, const uint16_t responseCode, const uint32_t payloadSize)
+{
+    std::cout << "[Runtime] Response received:\n" <<
+        "(1) Server version = " << static_cast<int>(serverVersion) << "\n" <<
+        "(2) Response code = " << responseCode << "\n" <<
+        "(3) Payload size = " << payloadSize << std::endl;
+}
 
 ClientLogic::ClientLogic(const std::string& rootPath) : 
     _rootPath(rootPath), _checksum(0), _needToRegister(false),
@@ -38,10 +46,10 @@ bool ClientLogic::initialize()
     }
     // transfer.info parsed successfuly
     std::cout << "[Initialize] Success parsing transfer.info with the following parameters:\n"
-        "             (1) Host address: " << _hostAddress << "\n"
-        "             (2) Host port: " << _hostPort << "\n"
-        "             (3) Client name: " << _clientName << "\n"
-        "             (4) File name: " << _fileName << std::endl;
+        "(1) Host address: " << _hostAddress << "\n"
+        "(2) Host port: " << _hostPort << "\n"
+        "(3) Client name: " << _clientName << "\n"
+        "(4) File name: " << _fileName << std::endl;
 
     /* Parse me.info file */
     if (boost::filesystem::exists(_rootPath + "\\me.info"))
@@ -53,9 +61,9 @@ bool ClientLogic::initialize()
             return false;
         }
         std::cout << "[Initialize] Success parsing me.info with the following parameters:\n"
-            "             (1) Client name: " << _clientName << "\n"
-            "             (2) Client ID: " << Utilities::UUID::convertUuidFromRawToAscii(_clientID) << "\n"
-            "             (3) Private key is valid" << std::endl;
+            "(1) Client name: " << _clientName << "\n"
+            "(2) Client ID: " << Utilities::UUID::convertUuidFromRawToAscii(_clientID) << "\n"
+            "(3) Private key is valid" << std::endl;
         _needToRegister = false;
     }
     else
@@ -115,13 +123,15 @@ bool ClientLogic::run()
         Request::RequestCode currentRequest = _needToRegister ? Request::REGISTER : Request::LOGIN;
         while (!finished)
         {
-            for (retryCount = 0; retryCount < NUMBER_OF_RETRIES; ++retryCount)
+            retryCount = (currentRequest == Request::CRC_INVALID_RETRYING) ? 2 : 1;
+            for (; retryCount <= NUMBER_OF_RETRIES; ++retryCount)
             {
                 if (Request::REGISTER == currentRequest)
                 {
                     rc = handleRegistration(socket);
                     if (Response::REGISTER_SUCCESS == rc)
                     {
+                        std::cout << "[Runtime] Successfully registered to server" << std::endl;
                         currentRequest = Request::KEY_EXCHANGE;
                         break;
                     }
@@ -140,6 +150,7 @@ bool ClientLogic::run()
                     rc = handleLogin(socket);
                     if (Response::LOGIN_SUCCESS == rc)
                     {
+                        std::cout << "[Runtime] Successfully loged in to server" << std::endl;
                         currentRequest = Request::BACKUP_FILE;
                         break;
                     }
@@ -159,6 +170,7 @@ bool ClientLogic::run()
                     rc = handleKeyExchange(socket);
                     if (Response::PUBLIC_KEY_RECEIVED == rc)
                     {
+                        std::cout << "[Runtime] Successfully exchanged keys with server" << std::endl;
                         currentRequest = Request::BACKUP_FILE;
                         break;
                     }
@@ -176,11 +188,13 @@ bool ClientLogic::run()
                     {
                         if (_checksum == checksum)
                         {
+                            std::cout << "[Runtime] Successfully backed up file" << std::endl;
                             currentRequest = Request::CRC_VALID;
                             break;
                         }
                         else
                         {
+                            std::cout << "[Runtime] CRC is invalid. Retrying..." << std::endl;
                             currentRequest = Request::CRC_INVALID_RETRYING;
                             break;
                         }
@@ -247,7 +261,7 @@ bool ClientLogic::run()
                 std::cout << "[Runtime] Server responded with an error (request code = " << currentRequest <<
                     "). Retrying... (retry count = " << retryCount << ")" << std::endl;
             }
-            if (NUMBER_OF_RETRIES == retryCount)
+            if (NUMBER_OF_RETRIES < retryCount)
             {
                 throw std::runtime_error("Maximum number of retries reached (request code = " + std::to_string(currentRequest) + ")");
             }
@@ -257,7 +271,7 @@ bool ClientLogic::run()
     {
         std::cerr << "[Exception] " << e.what() << std::endl;
     }
-    std::cout << "[Runtime] Beginning runtime phase" << std::endl;
+    std::cout << "[Runtime] Finished runtime phase" << std::endl;
     return success;
 }
 
@@ -382,10 +396,10 @@ bool ClientLogic::parseMeInfo(std::stringstream& errorMessage)
 
 uint16_t ClientLogic::handleLogin(tcp::socket& s)
 {
-    // TODO: add printings
     /* Send login request */
+    std::cout << "[Runtime] Sending login request" << std::endl;
     Request::Request_ClientNamePayload request;
-    request.pack(_clientID.data(), _version, Request::LOGIN, _clientName.c_str());
+    request.pack(_clientID.data(), _version, Request::LOGIN, _clientName);
     boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
 
     /* Receive response header */
@@ -395,6 +409,7 @@ uint16_t ClientLogic::handleLogin(tcp::socket& s)
     Response::ResponseHeader responseHeader;
     boost::asio::read(s, boost::asio::buffer(&responseHeader, sizeof(responseHeader)));
     responseHeader.unpack(serverVersion, responseCode, payloadSize);
+    printResponseHeader(serverVersion, responseCode, payloadSize);
 
     /* Analize response */
     if (Response::LOGIN_SUCCESS == responseCode)
@@ -433,11 +448,11 @@ uint16_t ClientLogic::handleLogin(tcp::socket& s)
 
 uint16_t ClientLogic::handleRegistration(tcp::socket& s)
 {
-    // TODO: add printings
     /* Send registration request */
+    std::cout << "[Runtime] Sending registration request" << std::endl;
     Request::Request_ClientNamePayload request;
     uint8_t nullID[BYTES_IN_CLIENT_ID] = { 0 };
-    request.pack(nullID, _version, Request::REGISTER, _clientName.c_str());
+    request.pack(nullID, _version, Request::REGISTER, _clientName);
     boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
 
     /* Receive response header */
@@ -447,6 +462,7 @@ uint16_t ClientLogic::handleRegistration(tcp::socket& s)
     Response::ResponseHeader responseHeader;
     boost::asio::read(s, boost::asio::buffer(&responseHeader, sizeof(responseHeader)));
     responseHeader.unpack(serverVersion, responseCode, payloadSize);
+    printResponseHeader(serverVersion, responseCode, payloadSize);
 
     /* Analize response */
     if (Response::REGISTER_SUCCESS == responseCode)
@@ -455,20 +471,30 @@ uint16_t ClientLogic::handleRegistration(tcp::socket& s)
         Response::Response_ClientIDPayload responsePayload;
         boost::asio::read(s, boost::asio::buffer(&responsePayload, sizeof(responsePayload)));
         responsePayload.unpack(_clientID);
-
-        // TODO: Need to create me.info
-
-        return Response::REGISTER_SUCCESS;
+        
+        /* Create me.info file */
+        std::stringstream ss;
+        ss << _clientName << "\n" << Utilities::UUID::convertUuidFromRawToAscii(_clientID) << "\n";
+        if (nullptr == _rsaPrivateWrapper)
+        {
+            _rsaPrivateWrapper = new RSAPrivateWrapper();
+        }
+        ss << Base64Wrapper::encode(_rsaPrivateWrapper->getPrivateKey());
+        std::ofstream meInfoFile;
+        meInfoFile.exceptions(std::ofstream::badbit);
+        meInfoFile.open(_rootPath + "\\me.info");
+        meInfoFile << ss.str();
+        meInfoFile.close();
     }
     return responseCode;
 }
 
 uint16_t ClientLogic::handleKeyExchange(tcp::socket& s)
 {
-    // TODO: add printings
     /* Send key exchange request */
+    std::cout << "[Runtime] Sending key exchange request" << std::endl;
     Request::Request_PublicKeyPayload request;
-    request.pack(_clientID.data(), _version, Request::LOGIN, _clientName.c_str(), (uint8_t*)_rsaPrivateWrapper->getPublicKey().c_str());
+    request.pack(_clientID.data(), _version, Request::KEY_EXCHANGE, _clientName, (uint8_t*)_rsaPrivateWrapper->getPublicKey().c_str());
     boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
 
     /* Receive response header */
@@ -478,6 +504,7 @@ uint16_t ClientLogic::handleKeyExchange(tcp::socket& s)
     Response::ResponseHeader responseHeader;
     boost::asio::read(s, boost::asio::buffer(&responseHeader, sizeof(responseHeader)));
     responseHeader.unpack(serverVersion, responseCode, payloadSize);
+    printResponseHeader(serverVersion, responseCode, payloadSize);
 
     if (Response::PUBLIC_KEY_RECEIVED == responseCode)
     {
@@ -502,8 +529,6 @@ uint16_t ClientLogic::handleKeyExchange(tcp::socket& s)
 
 uint16_t ClientLogic::handleFileBackup(tcp::socket& s, uint32_t& checksum)
 {
-    // TODO: add printings
-
     /* Encrypt file before sending */
     const std::string encryptedFilePath = _aesWrapper->encryptFile(_rootPath + "\\" + _fileName);
     const size_t encryptedFileSize = boost::filesystem::file_size(encryptedFilePath);
@@ -514,8 +539,9 @@ uint16_t ClientLogic::handleFileBackup(tcp::socket& s, uint32_t& checksum)
     encryptedFile.open(encryptedFilePath);
 
     /* Send file backup request */
+    std::cout << "[Runtime] Sending file backup request" << std::endl;
     Request::Request_FilePayload request;
-    request.pack(_clientID.data(), _version, Request::BACKUP_FILE, static_cast<uint32_t>(encryptedFileSize), _fileName.c_str());
+    request.pack(_clientID.data(), _version, Request::BACKUP_FILE, static_cast<uint32_t>(encryptedFileSize), _fileName);
     boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
 
     /* Send the file itself */
@@ -531,7 +557,7 @@ uint16_t ClientLogic::handleFileBackup(tcp::socket& s, uint32_t& checksum)
         bytesRemaining -= boost::asio::write(s, boost::asio::buffer(buffer, bufferSize));
     }
     encryptedFile.close();
-    boost::filesystem::remove(encryptedFilePath);
+    //boost::filesystem::remove(encryptedFilePath);
 
     /* Receive response header */
     uint8_t serverVersion;
@@ -540,6 +566,7 @@ uint16_t ClientLogic::handleFileBackup(tcp::socket& s, uint32_t& checksum)
     Response::ResponseHeader responseHeader;
     boost::asio::read(s, boost::asio::buffer(&responseHeader, sizeof(responseHeader)));
     responseHeader.unpack(serverVersion, responseCode, payloadSize);
+    printResponseHeader(serverVersion, responseCode, payloadSize);
 
     if (Response::FILE_RECEIVED == responseCode)
     {
@@ -570,10 +597,10 @@ uint16_t ClientLogic::handleFileBackup(tcp::socket& s, uint32_t& checksum)
 
 uint16_t ClientLogic::handleValidCRC(tcp::socket& s)
 {
-    // TODO: add printings
     /* Send CRC valid request */
+    std::cout << "[Runtime] Sending valid CRC request" << std::endl;
     Request::Request_FileNamePayload request;
-    request.pack(_clientID.data(), _version, Request::CRC_VALID, _fileName.c_str());
+    request.pack(_clientID.data(), _version, Request::CRC_VALID, _fileName);
     boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
 
     /* Receive response header */
@@ -583,6 +610,7 @@ uint16_t ClientLogic::handleValidCRC(tcp::socket& s)
     Response::ResponseHeader responseHeader;
     boost::asio::read(s, boost::asio::buffer(&responseHeader, sizeof(responseHeader)));
     responseHeader.unpack(serverVersion, responseCode, payloadSize);
+    printResponseHeader(serverVersion, responseCode, payloadSize);
 
     if (Response::ACKNOWLEDGE == responseCode)
     {
@@ -603,10 +631,10 @@ uint16_t ClientLogic::handleValidCRC(tcp::socket& s)
 
 uint16_t ClientLogic::handleInvalidCRC(tcp::socket& s, uint32_t& checksum)
 {
-    // TODO: add printings
     /* Send CRC invalid request */
+    std::cout << "[Runtime] Sending invalid CRC request" << std::endl;
     Request::Request_FileNamePayload request;
-    request.pack(_clientID.data(), _version, Request::CRC_INVALID_RETRYING, _fileName.c_str());
+    request.pack(_clientID.data(), _version, Request::CRC_INVALID_RETRYING, _fileName);
     boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
 
     /* Send the file again */
@@ -615,11 +643,10 @@ uint16_t ClientLogic::handleInvalidCRC(tcp::socket& s, uint32_t& checksum)
 
 uint16_t ClientLogic::handleAbort(tcp::socket& s)
 {
-    // TODO: add printings
-
-    /* Send CRC valid request */
+    /* Send abort request */
+    std::cout << "[Runtime] Sending abort request" << std::endl;
     Request::Request_FileNamePayload request;
-    request.pack(_clientID.data(), _version, Request::CRC_INVALID_ABORTING, _fileName.c_str());
+    request.pack(_clientID.data(), _version, Request::CRC_INVALID_ABORTING, _fileName);
     boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
 
     /* Receive response header */
@@ -629,6 +656,7 @@ uint16_t ClientLogic::handleAbort(tcp::socket& s)
     Response::ResponseHeader responseHeader;
     boost::asio::read(s, boost::asio::buffer(&responseHeader, sizeof(responseHeader)));
     responseHeader.unpack(serverVersion, responseCode, payloadSize);
+    printResponseHeader(serverVersion, responseCode, payloadSize);
 
     if (Response::ACKNOWLEDGE == responseCode)
     {
@@ -643,8 +671,6 @@ uint16_t ClientLogic::handleAbort(tcp::socket& s)
         {
             throw std::invalid_argument("Client ID received from server is incorrect");
         }
-
-        return Response::ACKNOWLEDGE;
     }
     return responseCode;
 }

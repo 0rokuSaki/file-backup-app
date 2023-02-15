@@ -28,11 +28,11 @@ namespace Request
 		const uint8_t* clientID,
 		const uint8_t version,
 		const uint16_t code,
-		const char* clientName
+		const std::string& clientName
 	)
 	{
 		RequestHeader::pack(clientID, version, code, BYTES_IN_CLIENT_NAME);
-		memcpy(this->clientName, clientName, BYTES_IN_CLIENT_NAME);
+		memcpy(this->clientName, clientName.c_str(), clientName.size());
 	}
 
 
@@ -40,11 +40,11 @@ namespace Request
 		const uint8_t* clientID,
 		const uint8_t version,
 		const uint16_t code,
-		const char* fileName
+		const std::string& fileName
 	)
 	{
 		RequestHeader::pack(clientID, version, code, BYTES_IN_FILE_NAME);
-		memcpy(this->fileName, fileName, BYTES_IN_FILE_NAME);
+		memcpy(this->fileName, fileName.c_str(), fileName.size());
 	}
 
 
@@ -52,12 +52,12 @@ namespace Request
 		const uint8_t* clientID,
 		const uint8_t version,
 		const uint16_t code,
-		const char* clientName,
+		const std::string& clientName,
 		const uint8_t* publicKey
 	)
 	{
 		RequestHeader::pack(clientID, version, code, BYTES_IN_CLIENT_NAME + BYTES_IN_PUBLIC_KEY);
-		memcpy(this->clientName, clientName, BYTES_IN_CLIENT_NAME);
+		memcpy(this->clientName, clientName.c_str(), clientName.size());
 		memcpy(this->publicKey, publicKey, BYTES_IN_PUBLIC_KEY);
 	}
 
@@ -67,7 +67,7 @@ namespace Request
 		const uint8_t version,
 		const uint16_t code,
 		const uint32_t contentSize,
-		const char* fileName
+		const std::string& fileName
 	)
 	{
 		RequestHeader::pack(clientID, version, code, BYTES_IN_CONTENT_SIZE + BYTES_IN_FILE_NAME + contentSize);
@@ -76,7 +76,7 @@ namespace Request
 		{
 			Utilities::Endianess::changeEndianness(this->contentSize);
 		}
-		memcpy(this->fileName, fileName, BYTES_IN_FILE_NAME);
+		memcpy(this->fileName, fileName.c_str(), fileName.size());
 	}
 }
 

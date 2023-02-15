@@ -63,7 +63,7 @@ namespace Request
 			const uint8_t* clientID,
 			const uint8_t version,
 			const uint16_t code,
-			const char* clientName
+			const std::string& clientName
 		);
 	};
 
@@ -80,7 +80,7 @@ namespace Request
 			const uint8_t* clientID,
 			const uint8_t version,
 			const uint16_t code,
-			const char* fileName
+			const std::string& fileName
 		);
 	};
 
@@ -99,7 +99,7 @@ namespace Request
 			const uint8_t* clientID,
 			const uint8_t version,
 			const uint16_t code,
-			const char* clientName,
+			const std::string& clientName,
 			const uint8_t* publicKey
 		);
 	};
@@ -119,7 +119,7 @@ namespace Request
 			const uint8_t version,
 			const uint16_t code,
 			const uint32_t contentSize,
-			const char* fileName
+			const std::string& fileName
 		);
 	};
 #pragma pack(pop)
