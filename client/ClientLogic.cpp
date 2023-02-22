@@ -9,12 +9,13 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <typeinfo>
 #include <vector>
 
 
 void printResponseHeader(const uint8_t serverVersion, const uint16_t responseCode, const uint32_t payloadSize)
 {
-    std::cout << "[Runtime] Response received:\n" <<
+    std::cout << "Response received:\n" <<
         "(1) Server version = " << static_cast<int>(serverVersion) << "\n" <<
         "(2) Response code = " << responseCode << "\n" <<
         "(3) Payload size = " << payloadSize << std::endl;
@@ -24,28 +25,29 @@ ClientLogic::ClientLogic(const std::string& rootPath) :
     _rootPath(rootPath), _checksum(0), _needToRegister(false),
     _rsaPrivateWrapper(nullptr), _aesWrapper(nullptr)
 {
-    std::cout << "[ClientLogic] Created ClientLogic with root path: " + _rootPath << std::endl;
+    std::cout << "Created ClientLogic with root path: " + _rootPath << std::endl;
 }
 
 ClientLogic::~ClientLogic()
 {
     delete _rsaPrivateWrapper;
     delete _aesWrapper;
+    std::cout << "Finalized ClientLogic" + _rootPath << std::endl;
 }
 
 bool ClientLogic::initialize()
 {
-    std::cout << "[Initialize] beginning initialization phase" << std::endl;
+    std::cout << "Beginning initialization phase" << std::endl;
     std::stringstream errorMessage;
     /* Parse transfer.info file */
     if (!parseTransferInfo(errorMessage))
     {
         // transfer.info might not exist or is corrupted
-        std::cerr << "[Initialize] Error parsing transfer.info: " << errorMessage.str() << std::endl;
+        std::cerr << "Error parsing transfer.info: " << errorMessage.str() << std::endl;
         return false;
     }
     // transfer.info parsed successfuly
-    std::cout << "[Initialize] Success parsing transfer.info with the following parameters:\n"
+    std::cout << "Success parsing transfer.info with the following parameters:\n"
         "(1) Host address: " << _hostAddress << "\n"
         "(2) Host port: " << _hostPort << "\n"
         "(3) Client name: " << _clientName << "\n"
@@ -57,10 +59,10 @@ bool ClientLogic::initialize()
         if (!parseMeInfo(errorMessage))  // me.info exists, parse it
         {
             // me.info info is corrupted
-            std::cerr << "[Initialize] Error parsing me.info: " << errorMessage.str() << std::endl;
+            std::cerr << "Error parsing me.info: " << errorMessage.str() << std::endl;
             return false;
         }
-        std::cout << "[Initialize] Success parsing me.info with the following parameters:\n"
+        std::cout << "Success parsing me.info with the following parameters:\n"
             "(1) Client name: " << _clientName << "\n"
             "(2) Client ID: " << Utilities::UUID::convertUuidFromRawToAscii(_clientID) << "\n"
             "(3) Private key is valid" << std::endl;
@@ -78,11 +80,11 @@ bool ClientLogic::initialize()
     const size_t encryptedFileSize = (fileSize / 16 + 1) * 16;
     if (encryptedFileSize > _maxTransferSize)
     {
-        std::cerr << "[Initialize] File is too large to transfer (file size = " << fileSize << ", max size = " << _maxTransferSize << ")";
+        std::cerr << "File is too large to transfer (file size = " << fileSize << ", max size = " << _maxTransferSize << ")";
         return false;
     }
-    std::cout << "[Initialize] Size of file: " << _fileName << " is: " << fileSize << " bytes" << std::endl;
-    std::cout << "[Initialize] Size of file: " << _fileName << " after encryption is: " << encryptedFileSize << " bytes" << std::endl;
+    std::cout << "Size of file: " << _fileName << " is: " << fileSize << " bytes" << std::endl;
+    std::cout << "Size of file: " << _fileName << " after encryption is: " << encryptedFileSize << " bytes" << std::endl;
 
     /* Calculate CRC of file */
     try
@@ -91,20 +93,20 @@ bool ClientLogic::initialize()
     }
     catch (const std::exception& e)
     {
-        std::cerr << "[Initialize] Error calculating checksum of file: " << _fileName <<
+        std::cerr << "Error calculating checksum of file: " << _fileName <<
             " (Exception: " << e.what() << ")" << std::endl;
         return false;
     }
-    std::cout << "[Initialize] Success calculating checksum of file: " << _fileName <<
+    std::cout << "Success calculating checksum of file: " << _fileName <<
         " (checksum = " << _checksum << ")" << std::endl;
 
-    std::cout << "[Initialize] Finished initialization phase" << std::endl;
+    std::cout << "Finished initialization phase" << std::endl;
     return true;
 }
 
 bool ClientLogic::run()
 {
-    std::cout << "[Runtime] Beginning runtime phase" << std::endl;
+    std::cout << "Beginning runtime phase" << std::endl;
     bool success = false;
     boost::asio::io_context io_context;
     tcp::socket socket(io_context);
@@ -112,9 +114,9 @@ bool ClientLogic::run()
 
     try
     {
-        std::cout << "[Runtime] Connecting to server " << _hostAddress << ":" << _hostPort << std::endl;
+        std::cout << "Connecting to server " << _hostAddress << ":" << _hostPort << std::endl;
         boost::asio::connect(socket, resolver.resolve(_hostAddress, _hostPort));
-        std::cout << "[Runtime] Successfully connected to server" << std::endl;
+        std::cout << "Successfully connected to server" << std::endl;
 
         constexpr int NUMBER_OF_RETRIES = 3;
         bool finished = false;
@@ -123,6 +125,7 @@ bool ClientLogic::run()
         Request::RequestCode currentRequest = _needToRegister ? Request::REGISTER : Request::LOGIN;
         while (!finished)
         {
+            // retryCount is initialized this way so there would be three attempts to send a file.
             retryCount = (currentRequest == Request::CRC_INVALID_RETRYING) ? 2 : 1;
             for (; retryCount <= NUMBER_OF_RETRIES; ++retryCount)
             {
@@ -131,7 +134,7 @@ bool ClientLogic::run()
                     rc = handleRegistration(socket);
                     if (Response::REGISTER_SUCCESS == rc)
                     {
-                        std::cout << "[Runtime] Successfully registered to server" << std::endl;
+                        std::cout << "Successfully registered to server" << std::endl;
                         currentRequest = Request::KEY_EXCHANGE;
                         break;
                     }
@@ -139,7 +142,7 @@ bool ClientLogic::run()
                     {
                         throw std::runtime_error("Failed to register to server");
                     }
-                    if (Response::GENERAL_FAILURE == rc);  // Retry
+                    if (Response::GENERAL_FAILURE == rc);  // Do nothing - retry.
                     else
                     {
                         throw std::runtime_error("Server's response code does not match protocol");
@@ -150,7 +153,7 @@ bool ClientLogic::run()
                     rc = handleLogin(socket);
                     if (Response::LOGIN_SUCCESS == rc)
                     {
-                        std::cout << "[Runtime] Successfully loged in to server" << std::endl;
+                        std::cout << "Successfully loged in to server" << std::endl;
                         currentRequest = Request::BACKUP_FILE;
                         break;
                     }
@@ -159,7 +162,7 @@ bool ClientLogic::run()
                         currentRequest = Request::REGISTER;
                         break;
                     }
-                    else if (Response::GENERAL_FAILURE == rc);  // Retry
+                    else if (Response::GENERAL_FAILURE == rc);  // Do nothing - retry.
                     else
                     {
                         throw std::runtime_error("Server's response code does not match protocol");
@@ -170,11 +173,11 @@ bool ClientLogic::run()
                     rc = handleKeyExchange(socket);
                     if (Response::PUBLIC_KEY_RECEIVED == rc)
                     {
-                        std::cout << "[Runtime] Successfully exchanged keys with server" << std::endl;
+                        std::cout << "Successfully exchanged keys with server" << std::endl;
                         currentRequest = Request::BACKUP_FILE;
                         break;
                     }
-                    else if (Response::GENERAL_FAILURE == rc);  // Retry
+                    else if (Response::GENERAL_FAILURE == rc);  // Do nothing - retry.
                     else
                     {
                         throw std::runtime_error("Server's response code does not match protocol");
@@ -188,18 +191,18 @@ bool ClientLogic::run()
                     {
                         if (_checksum == checksum)
                         {
-                            std::cout << "[Runtime] Successfully backed up file" << std::endl;
+                            std::cout << "Successfully backed up file" << std::endl;
                             currentRequest = Request::CRC_VALID;
                             break;
                         }
                         else
                         {
-                            std::cout << "[Runtime] CRC is invalid. Retrying..." << std::endl;
+                            std::cout << "CRC is invalid. Retrying..." << std::endl;
                             currentRequest = Request::CRC_INVALID_RETRYING;
                             break;
                         }
                     }
-                    else if (Response::GENERAL_FAILURE == rc);  // Retry
+                    else if (Response::GENERAL_FAILURE == rc);  // Do nothing - retry.
                     else
                     {
                         throw std::runtime_error("Server's response code does not match protocol");
@@ -214,7 +217,7 @@ bool ClientLogic::run()
                         finished = true;
                         break;
                     }
-                    else if (Response::GENERAL_FAILURE == rc);  // Retry
+                    else if (Response::GENERAL_FAILURE == rc);  // Do nothing - retry.
                     else
                     {
                         throw std::runtime_error("Server's response code does not match protocol");
@@ -233,11 +236,11 @@ bool ClientLogic::run()
                         }
                         else
                         {
-                            std::cout << "[Runtime] CRC is invalid. Retrying... (retry count = " << retryCount << ")" << std::endl;
+                            std::cout << "CRC is invalid. Retrying... (retry count = " << retryCount << ")" << std::endl;
                             continue;
                         }
                     }
-                    else if (Response::GENERAL_FAILURE == rc);  // Retry
+                    else if (Response::GENERAL_FAILURE == rc);  // Do nothing - retry.
                     else
                     {
                         throw std::runtime_error("Server's response code does not match protocol");
@@ -251,14 +254,14 @@ bool ClientLogic::run()
                         finished = true;
                         break;
                     }
-                    if (Response::GENERAL_FAILURE == rc);  // Retry
+                    if (Response::GENERAL_FAILURE == rc);  // Do nothing - retry.
                     else
                     {
                         throw std::runtime_error("Server's response code does not match protocol");
                     }
                 }
 
-                std::cout << "[Runtime] Server responded with an error (request code = " << currentRequest <<
+                std::cout << "Server responded with an error (request code = " << currentRequest <<
                     "). Retrying... (retry count = " << retryCount << ")" << std::endl;
             }
             if (NUMBER_OF_RETRIES < retryCount)
@@ -269,9 +272,9 @@ bool ClientLogic::run()
     }
     catch (const std::exception& e)
     {
-        std::cerr << "[Exception] " << e.what() << std::endl;
+        std::cerr << "Exception: " << e.what() << std::endl;
     }
-    std::cout << "[Runtime] Finished runtime phase" << std::endl;
+    std::cout << "Finished runtime phase" << std::endl;
     return success;
 }
 
@@ -397,7 +400,7 @@ bool ClientLogic::parseMeInfo(std::stringstream& errorMessage)
 uint16_t ClientLogic::handleLogin(tcp::socket& s)
 {
     /* Send login request */
-    std::cout << "[Runtime] Sending login request" << std::endl;
+    std::cout << "\nSending login request" << std::endl;
     Request::Request_ClientNamePayload request;
     request.pack(_clientID.data(), _version, Request::LOGIN, _clientName);
     boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
@@ -449,7 +452,7 @@ uint16_t ClientLogic::handleLogin(tcp::socket& s)
 uint16_t ClientLogic::handleRegistration(tcp::socket& s)
 {
     /* Send registration request */
-    std::cout << "[Runtime] Sending registration request" << std::endl;
+    std::cout << "\nSending registration request" << std::endl;
     Request::Request_ClientNamePayload request;
     uint8_t nullID[BYTES_IN_CLIENT_ID] = { 0 };
     request.pack(nullID, _version, Request::REGISTER, _clientName);
@@ -492,7 +495,7 @@ uint16_t ClientLogic::handleRegistration(tcp::socket& s)
 uint16_t ClientLogic::handleKeyExchange(tcp::socket& s)
 {
     /* Send key exchange request */
-    std::cout << "[Runtime] Sending key exchange request" << std::endl;
+    std::cout << "\nSending key exchange request" << std::endl;
     Request::Request_PublicKeyPayload request;
     request.pack(_clientID.data(), _version, Request::KEY_EXCHANGE, _clientName, (uint8_t*)_rsaPrivateWrapper->getPublicKey().c_str());
     boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
@@ -536,10 +539,10 @@ uint16_t ClientLogic::handleFileBackup(tcp::socket& s, uint32_t& checksum)
     /* Open the encrypted file for reading */
     std::ifstream encryptedFile;
     encryptedFile.exceptions(std::ios::badbit);
-    encryptedFile.open(encryptedFilePath);
+    encryptedFile.open(encryptedFilePath, std::ios::binary);
 
     /* Send file backup request */
-    std::cout << "[Runtime] Sending file backup request" << std::endl;
+    std::cout << "\nSending file backup request" << std::endl;
     Request::Request_FilePayload request;
     request.pack(_clientID.data(), _version, Request::BACKUP_FILE, static_cast<uint32_t>(encryptedFileSize), _fileName);
     boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
@@ -549,6 +552,7 @@ uint16_t ClientLogic::handleFileBackup(tcp::socket& s, uint32_t& checksum)
     char buffer[PACKET_SIZE] = { 0 };
     size_t bytesRemaining = encryptedFileSize;
 
+    std::cout << "Backing up file..." << std::endl;
     while (bytesRemaining)
     {
         memset(buffer, 0, PACKET_SIZE);
@@ -557,7 +561,7 @@ uint16_t ClientLogic::handleFileBackup(tcp::socket& s, uint32_t& checksum)
         bytesRemaining -= boost::asio::write(s, boost::asio::buffer(buffer, bufferSize));
     }
     encryptedFile.close();
-    //boost::filesystem::remove(encryptedFilePath);
+    boost::filesystem::remove(encryptedFilePath);  // remove temp file
 
     /* Receive response header */
     uint8_t serverVersion;
@@ -598,7 +602,7 @@ uint16_t ClientLogic::handleFileBackup(tcp::socket& s, uint32_t& checksum)
 uint16_t ClientLogic::handleValidCRC(tcp::socket& s)
 {
     /* Send CRC valid request */
-    std::cout << "[Runtime] Sending valid CRC request" << std::endl;
+    std::cout << "\nSending valid CRC request" << std::endl;
     Request::Request_FileNamePayload request;
     request.pack(_clientID.data(), _version, Request::CRC_VALID, _fileName);
     boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
@@ -632,7 +636,7 @@ uint16_t ClientLogic::handleValidCRC(tcp::socket& s)
 uint16_t ClientLogic::handleInvalidCRC(tcp::socket& s, uint32_t& checksum)
 {
     /* Send CRC invalid request */
-    std::cout << "[Runtime] Sending invalid CRC request" << std::endl;
+    std::cout << "\nSending invalid CRC request" << std::endl;
     Request::Request_FileNamePayload request;
     request.pack(_clientID.data(), _version, Request::CRC_INVALID_RETRYING, _fileName);
     boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
@@ -644,7 +648,7 @@ uint16_t ClientLogic::handleInvalidCRC(tcp::socket& s, uint32_t& checksum)
 uint16_t ClientLogic::handleAbort(tcp::socket& s)
 {
     /* Send abort request */
-    std::cout << "[Runtime] Sending abort request" << std::endl;
+    std::cout << "\nSending abort request" << std::endl;
     Request::Request_FileNamePayload request;
     request.pack(_clientID.data(), _version, Request::CRC_INVALID_ABORTING, _fileName);
     boost::asio::write(s, boost::asio::buffer(&request, sizeof(request)));
