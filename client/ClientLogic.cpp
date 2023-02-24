@@ -121,7 +121,6 @@ bool ClientLogic::run()
         constexpr int NUMBER_OF_RETRIES = 3;
         bool finished = false;
         int retryCount;
-        uint16_t rc = 0;
         Request::RequestCode currentRequest = _needToRegister ? Request::REGISTER : Request::LOGIN;
         while (!finished)
         {
@@ -129,31 +128,19 @@ bool ClientLogic::run()
             retryCount = (currentRequest == Request::CRC_INVALID_RETRYING) ? 2 : 1;
             for (; retryCount <= NUMBER_OF_RETRIES; ++retryCount)
             {
-                if (Request::REGISTER == currentRequest)
+                if (Request::REGISTER == currentRequest &&
+                    Response::REGISTER_SUCCESS == handleRegistration(socket))
                 {
-                    rc = handleRegistration(socket);
-                    if (Response::REGISTER_SUCCESS == rc)
-                    {
-                        std::cout << "Successfully registered to server" << std::endl;
-                        currentRequest = Request::KEY_EXCHANGE;
-                        break;
-                    }
-                    if (Response::REGISTER_FAILURE == rc)
-                    {
-                        throw std::runtime_error("Failed to register to server");
-                    }
-                    if (Response::GENERAL_FAILURE == rc);  // Do nothing - retry.
-                    else
-                    {
-                        throw std::runtime_error("Server's response code does not match protocol");
-                    }
+                    std::cout << "Successfully registered to server" << std::endl;
+                    currentRequest = Request::KEY_EXCHANGE;
+                    break;
                 }
                 else if (Request::LOGIN == currentRequest)
                 {
-                    rc = handleLogin(socket);
+                    uint16_t rc = handleLogin(socket);
                     if (Response::LOGIN_SUCCESS == rc)
                     {
-                        std::cout << "Successfully loged in to server" << std::endl;
+                        std::cout << "Successfully logged in to server" << std::endl;
                         currentRequest = Request::BACKUP_FILE;
                         break;
                     }
@@ -162,32 +149,18 @@ bool ClientLogic::run()
                         currentRequest = Request::REGISTER;
                         break;
                     }
-                    else if (Response::GENERAL_FAILURE == rc);  // Do nothing - retry.
-                    else
-                    {
-                        throw std::runtime_error("Server's response code does not match protocol");
-                    }
                 }
-                else if (currentRequest == Request::KEY_EXCHANGE)
+                else if (currentRequest == Request::KEY_EXCHANGE &&
+                    Response::PUBLIC_KEY_RECEIVED == handleKeyExchange(socket))
                 {
-                    rc = handleKeyExchange(socket);
-                    if (Response::PUBLIC_KEY_RECEIVED == rc)
-                    {
-                        std::cout << "Successfully exchanged keys with server" << std::endl;
-                        currentRequest = Request::BACKUP_FILE;
-                        break;
-                    }
-                    else if (Response::GENERAL_FAILURE == rc);  // Do nothing - retry.
-                    else
-                    {
-                        throw std::runtime_error("Server's response code does not match protocol");
-                    }
+                    std::cout << "Successfully exchanged keys with server" << std::endl;
+                    currentRequest = Request::BACKUP_FILE;
+                    break;
                 }
                 else if (currentRequest == Request::BACKUP_FILE)
                 {
                     uint32_t checksum;
-                    rc = handleFileBackup(socket, checksum);
-                    if (Response::FILE_RECEIVED == rc)
+                    if (Response::FILE_RECEIVED == handleFileBackup(socket, checksum))
                     {
                         if (_checksum == checksum)
                         {
@@ -202,32 +175,18 @@ bool ClientLogic::run()
                             break;
                         }
                     }
-                    else if (Response::GENERAL_FAILURE == rc);  // Do nothing - retry.
-                    else
-                    {
-                        throw std::runtime_error("Server's response code does not match protocol");
-                    }
                 }
-                else if (currentRequest == Request::CRC_VALID)
+                else if (currentRequest == Request::CRC_VALID &&
+                    Response::ACKNOWLEDGE == handleValidCRC(socket))
                 {
-                    rc = handleValidCRC(socket);
-                    if (Response::ACKNOWLEDGE == rc)
-                    {
-                        success = true;
-                        finished = true;
-                        break;
-                    }
-                    else if (Response::GENERAL_FAILURE == rc);  // Do nothing - retry.
-                    else
-                    {
-                        throw std::runtime_error("Server's response code does not match protocol");
-                    }
+                    success = true;
+                    finished = true;
+                    break;
                 }
                 else if (currentRequest == Request::CRC_INVALID_RETRYING)
                 {
                     uint32_t checksum;
-                    rc = handleInvalidCRC(socket, checksum);
-                    if (Response::FILE_RECEIVED == rc)
+                    if (Response::FILE_RECEIVED == handleInvalidCRC(socket, checksum))
                     {
                         if (_checksum == checksum)
                         {
@@ -240,35 +199,21 @@ bool ClientLogic::run()
                             continue;
                         }
                     }
-                    else if (Response::GENERAL_FAILURE == rc);  // Do nothing - retry.
-                    else
-                    {
-                        throw std::runtime_error("Server's response code does not match protocol");
-                    }
                 }
-                else if (currentRequest == Request::CRC_INVALID_ABORTING)
+                else if (currentRequest == Request::CRC_INVALID_ABORTING &&
+                    Response::ACKNOWLEDGE == handleAbort(socket))
                 {
-                    rc = handleAbort(socket);
-                    if (Response::ACKNOWLEDGE == rc)
-                    {
-                        finished = true;
-                        break;
-                    }
-                    if (Response::GENERAL_FAILURE == rc);  // Do nothing - retry.
-                    else
-                    {
-                        throw std::runtime_error("Server's response code does not match protocol");
-                    }
+                    finished = true;
+                    break;
                 }
-
                 std::cout << "Server responded with an error (request code = " << currentRequest <<
                     "). Retrying... (retry count = " << retryCount << ")" << std::endl;
-            }
+            }  // End of for loop
             if (NUMBER_OF_RETRIES < retryCount)
             {
                 throw std::runtime_error("Maximum number of retries reached (request code = " + std::to_string(currentRequest) + ")");
             }
-        }
+        }  // End of while loop
     }
     catch (const std::exception& e)
     {
@@ -446,6 +391,10 @@ uint16_t ClientLogic::handleLogin(tcp::socket& s)
             throw std::invalid_argument("Client ID received from server is incorrect.");
         }
     }
+    else if (Response::GENERAL_FAILURE != responseCode)
+    {
+        throw std::runtime_error("Server's response code does not match protocol");
+    }
     return responseCode;
 }
 
@@ -489,6 +438,14 @@ uint16_t ClientLogic::handleRegistration(tcp::socket& s)
         meInfoFile << ss.str();
         meInfoFile.close();
     }
+    else if (Response::REGISTER_FAILURE == responseCode)
+    {
+        throw std::runtime_error("Failed to register to server");
+    }
+    else if (Response::GENERAL_FAILURE != responseCode)
+    {
+        throw std::runtime_error("Server's response code does not match protocol");
+    }
     return responseCode;
 }
 
@@ -526,6 +483,10 @@ uint16_t ClientLogic::handleKeyExchange(tcp::socket& s)
         /* Parse encrypted AES key */
         std::string decryptedAesKey = _rsaPrivateWrapper->decrypt((char*)encryptedAesKey.data(), BYTES_IN_ENCRYPTED_AES_KEY);
         _aesWrapper = new AESWrapper((uint8_t*)decryptedAesKey.c_str(), BYTES_IN_AES_KEY);
+    }
+    else if (Response::GENERAL_FAILURE != responseCode)
+    {
+        throw std::runtime_error("Server's response code does not match protocol");
     }
     return responseCode;
 }
@@ -596,6 +557,10 @@ uint16_t ClientLogic::handleFileBackup(tcp::socket& s, uint32_t& checksum)
             throw std::invalid_argument("Content size received from server is incorrect");
         }
     }
+    else if (Response::GENERAL_FAILURE != responseCode)
+    {
+        throw std::runtime_error("Server's response code does not match protocol");
+    }
     return responseCode;
 }
 
@@ -629,6 +594,10 @@ uint16_t ClientLogic::handleValidCRC(tcp::socket& s)
         {
             throw std::invalid_argument("Client ID received from server is incorrect");
         }
+    }
+    else if (Response::GENERAL_FAILURE != responseCode)
+    {
+        throw std::runtime_error("Server's response code does not match protocol");
     }
     return responseCode;
 }
@@ -675,6 +644,10 @@ uint16_t ClientLogic::handleAbort(tcp::socket& s)
         {
             throw std::invalid_argument("Client ID received from server is incorrect");
         }
+    }
+    else if (Response::GENERAL_FAILURE)
+    {
+        throw std::runtime_error("Server's response code does not match protocol");
     }
     return responseCode;
 }
