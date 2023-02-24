@@ -162,9 +162,10 @@ class ClientHandler:
             bytes_remaining = content_size
             while bytes_remaining:
                 data = self.conn.recv(min(ClientHandler.PACKET_SIZE, bytes_remaining))
+                decrypted_data = unpad(cipher.decrypt(data), AES.block_size)
+                file.write(decrypted_data)
+                checksum = zlib.crc32(decrypted_data, checksum)
                 bytes_remaining -= len(data)
-                checksum = zlib.crc32(data, checksum)
-                file.write(unpad(cipher.decrypt(data), AES.block_size))
 
         # Send checksum to client
         self._write(RES_CRC_PAYLOAD, ResCode.FILE_RECEIVED, client_id, content_size, file_name, checksum)
