@@ -1,6 +1,8 @@
+from client_handler import ClientHandler
 from database import *
 import socket
 import threading
+
 
 class Server:
     DATABASE = 'server.db'
@@ -29,7 +31,7 @@ class Server:
 
     def _handle_client(self, conn: socket, addr) -> None:
         print(f'[Server] Client connected: {addr}')
-        ServerThread(conn, addr, self.database).handle_client()
+        ClientHandler(conn, addr, self.database).handle_client()
 
 
 if __name__ == "__main__":
