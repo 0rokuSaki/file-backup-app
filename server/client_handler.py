@@ -27,8 +27,8 @@ class ClientHandler:
             while active:
                 client_id, client_ver, req_code, payload_size = self._read(REQ_HEADER)  # Receive request header
                 print(f'\nRequest received from: {self.addr}\n'
-                      f'Client ID = {client_id}\n'
-                      f'Client version = {client_ver}\n'
+                      f'Client ID = {uuid.UUID(bytes=client_id)}\n'
+                      f"Client version = {int.from_bytes(client_ver, byteorder='little')}\n"
                       f'Request code = {req_code}\n'
                       f'Payload size = {payload_size}\n')
 
@@ -107,7 +107,7 @@ class ClientHandler:
 
         # Check if client exists
         if not self.db.client_id_exists(client_id):
-            print(f"Client '{client_name}' does not exit in database.")
+            print(f"Client '{client_name}' does not exist in database.")
             return ResCode.GENERAL_FAILURE  # TODO: determine what to do here
 
         # Set client's last seen
