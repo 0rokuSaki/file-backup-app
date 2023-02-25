@@ -6,13 +6,14 @@
  * \date   February 2023
  *********************************************************************/
 #pragma once
-#include "CRC.h"
+#include <boost/crc.hpp>
 
 #include <fstream>
 #include <sstream>
 #include <random>
 #include <string>
 #include <vector>
+#include <boost/crc.hpp>
 
 namespace Utilities
 {
@@ -65,25 +66,30 @@ namespace Utilities
 		}
 	}
 
-	namespace CRC32
+	namespace CRC
 	{
 		static uint32_t calculateFileCRC(const std::string& filePath)
 		{
-			std::ifstream file;
-			file.exceptions(std::ios::badbit);
-			file.open(filePath);
-			constexpr size_t BUFFER_SIZE = 1024;
-			char buffer[BUFFER_SIZE + 1] = { 0 };
-			file.read(buffer, BUFFER_SIZE);
-			uint32_t crc = crc = CRC::Calculate(buffer, strlen(buffer), CRC::CRC_32());
-			while (!file.eof())
+			constexpr size_t BUFFER_SIZE = 4096;
+			char buffer[BUFFER_SIZE];
+			boost::crc_32_type crc;
+
+			std::ifstream file(filePath, std::ios::binary);
+			do
 			{
-				memset(buffer, 0, BUFFER_SIZE + 1);
 				file.read(buffer, BUFFER_SIZE);
-				crc = CRC::Calculate(buffer, strlen(buffer), CRC::CRC_32(), crc);
-			}
+				crc.process_bytes(buffer, file.gcount());
+			} while (file);
 			file.close();
-			return crc;
+
+			if (file.eof())
+			{
+				return crc.checksum();
+			}
+			else
+			{
+				throw std::runtime_error("File read failed");
+			}
 		}
 	}
 

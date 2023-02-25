@@ -1,5 +1,6 @@
 #include "Protocol.h"
 #include "Utilities.h"
+#include <cstring>
 
 
 namespace Request
@@ -117,7 +118,8 @@ namespace Response
 	{
 		clientID = std::vector<uint8_t>(this->clientID, this->clientID + BYTES_IN_CLIENT_ID);
 		contentSize = this->contentSize;
-		fileName = std::string(this->fileName, this->fileName + BYTES_IN_FILE_NAME);
+		this->fileName[BYTES_IN_FILE_NAME - 1] = '\0';  // Make sure it's a null-terminated string
+		fileName = std::string(this->fileName, this->fileName + std::strlen((char*)this->fileName));
 		checksum = this->checksum;
 		if (!Utilities::Endianess::isLittleEndian())
 		{

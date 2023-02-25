@@ -32,7 +32,6 @@ ClientLogic::~ClientLogic()
 {
     delete _rsaPrivateWrapper;
     delete _aesWrapper;
-    std::cout << "Finalized ClientLogic" + _rootPath << std::endl;
 }
 
 bool ClientLogic::initialize()
@@ -62,7 +61,7 @@ bool ClientLogic::initialize()
             std::cerr << "Error parsing me.info: " << errorMessage.str() << std::endl;
             return false;
         }
-        std::cout << "Success parsing me.info with the following parameters:\n"
+        std::cout << "\nSuccess parsing me.info with the following parameters:\n"
             "(1) Client name: " << _clientName << "\n"
             "(2) Client ID: " << Utilities::UUID::convertUuidFromRawToAscii(_clientID) << "\n"
             "(3) Private key is valid" << std::endl;
@@ -89,7 +88,7 @@ bool ClientLogic::initialize()
     /* Calculate CRC of file */
     try
     {
-        _checksum = Utilities::CRC32::calculateFileCRC(_rootPath + "\\" + _fileName);
+        _checksum = Utilities::CRC::calculateFileCRC(_rootPath + "\\" + _fileName);
     }
     catch (const std::exception& e)
     {
