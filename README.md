@@ -1,6 +1,6 @@
 # File Backup Application
 This is my solution for exersice 15 in the course Defensive Systems Programming (20937) in the Open University of Israel.</br>
-I tried to implement as many of the concepts of defensive systems programming as I can, to create a robust program.
+I tried to create the most robust program as possible, using the concepts I learned in this course.
 
 ## General description
 This is a client-server application which allows clients to store files in a remote server. The files are encrypted before they are being transfered. </br>
