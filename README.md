@@ -43,5 +43,13 @@ The server's job is to constantly listen to client's requests, and the client wo
 1. ```pip install pycryptodome```
 2. All set!
 
+## How to run the client:
+You may run the client using a debugger or by running client.exe. Make sure you place transfer.info and New_product_spec.docx files in the following folders:
+1. Debugging using VS2022: place the files **in the same folder of the source files (.cpp and .h)**
+2. Running client.exe: place the files **in the same folder of client.exe**
+
+## How to run the server:
+Double click on run_server.bat.
+
 ## Additional resources:
 More info about the exersice, such as protocol, requirements etc. can be found in 'maman15.pdf' (file is written in hebrew).
