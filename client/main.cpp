@@ -1,3 +1,13 @@
+/*****************************************************************//**
+ * \file   main.cpp
+ * \brief  Main function for the client.
+ * Please read the README.md file for more information about this program.
+ * Repository link: https://github.com/0rokuSaki/file-backup-app
+ * 
+ * \author aaron
+ * \date   February 2023
+ *********************************************************************/
+
 #include "ClientLogic.h"
 
 int main(int argc, char** argv)
