@@ -15,7 +15,7 @@ using boost::asio::ip::tcp;
 class ClientLogic
 {
 public:
-    ClientLogic(const std::string& rootPath);
+    ClientLogic();
 
     ~ClientLogic();
 
@@ -47,7 +47,7 @@ private:
     std::vector<uint8_t> _clientID;
 
     /* File related variables */
-    std::string _rootPath;
+    std::string _filePath;
     std::string _fileName;
     uint32_t _checksum;
 

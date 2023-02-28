@@ -21,11 +21,10 @@ void printResponseHeader(const uint8_t serverVersion, const uint16_t responseCod
         "(3) Payload size = " << payloadSize << std::endl;
 }
 
-ClientLogic::ClientLogic(const std::string& rootPath) : 
-    _rootPath(rootPath), _checksum(0), _needToRegister(false),
+ClientLogic::ClientLogic() : _checksum(0), _needToRegister(false),
     _rsaPrivateWrapper(nullptr), _aesWrapper(nullptr)
 {
-    std::cout << "Created ClientLogic with root path: " + _rootPath << std::endl;
+    std::cout << "Created ClientLogic" << std::endl;
 }
 
 ClientLogic::~ClientLogic()
@@ -53,7 +52,7 @@ bool ClientLogic::initialize()
         "(4) File name: " << _fileName << std::endl;
 
     /* Parse me.info file */
-    if (boost::filesystem::exists(_rootPath + "\\me.info"))
+    if (boost::filesystem::exists("me.info"))
     {
         if (!parseMeInfo(errorMessage))  // me.info exists, parse it
         {
@@ -75,7 +74,7 @@ bool ClientLogic::initialize()
     // Check file size according to the following formula:
     // cipherLen = ( cleanLen/16 + 1) * 16
     // AES block size is 16
-    const size_t fileSize = boost::filesystem::file_size(_rootPath + "\\" + _fileName);
+    const size_t fileSize = boost::filesystem::file_size(_filePath);
     const size_t encryptedFileSize = (fileSize / 16 + 1) * 16;
     if (encryptedFileSize > _maxTransferSize)
     {
@@ -88,7 +87,7 @@ bool ClientLogic::initialize()
     /* Calculate CRC of file */
     try
     {
-        _checksum = Utilities::CRC::calculateFileCRC(_rootPath + "\\" + _fileName);
+        _checksum = Utilities::CRC::calculateFileCRC(_filePath);
     }
     catch (const std::exception& e)
     {
@@ -163,7 +162,7 @@ bool ClientLogic::run()
                     {
                         if (_checksum == checksum)
                         {
-                            std::cout << "Successfully backed up file" << std::endl;
+                            std::cout << "Successfully transfered file" << std::endl;
                             currentRequest = Request::CRC_VALID;
                             break;
                         }
@@ -180,6 +179,7 @@ bool ClientLogic::run()
                 {
                     success = true;
                     finished = true;
+                    std::cout << "Successfully verified CRC" << std::endl;
                     break;
                 }
                 else if (currentRequest == Request::CRC_INVALID_RETRYING)
@@ -224,7 +224,7 @@ bool ClientLogic::run()
 
 bool ClientLogic::parseTransferInfo(std::stringstream& errorMessage)
 {
-    std::ifstream transferInfoFile(_rootPath + "\\transfer.info");
+    std::ifstream transferInfoFile("transfer.info");
     if (!transferInfoFile.is_open())
     {
         errorMessage << "Could not open transfer.info";
@@ -275,16 +275,24 @@ bool ClientLogic::parseTransferInfo(std::stringstream& errorMessage)
     }
     _clientName = clientName;
 
-    /* Parse file name */
-    std::string fileName;
-    std::getline(transferInfoFile, fileName);
-    if (!boost::filesystem::exists(_rootPath + "\\" + fileName) || fileName.size() > BYTES_IN_FILE_NAME)
+    /* Parse file path and name */
+    std::string path;
+    std::getline(transferInfoFile, path);
+    boost::filesystem::path filePath(path);
+    if (!boost::filesystem::exists(filePath) && boost::filesystem::is_regular_file(filePath))
     {
-        errorMessage << "Invalid file name";
+        errorMessage << "Invalid file path: " << filePath;
         transferInfoFile.close();
         return false;
     }
-    _fileName = fileName;
+    if (filePath.filename().string().size() >= BYTES_IN_FILE_NAME)
+    {
+        errorMessage << "Invalid file name: " << filePath;
+        transferInfoFile.close();
+        return false;
+    }
+    _filePath = filePath.string();
+    _fileName = filePath.filename().string();
 
     transferInfoFile.close();
     return true;
@@ -292,7 +300,7 @@ bool ClientLogic::parseTransferInfo(std::stringstream& errorMessage)
 
 bool ClientLogic::parseMeInfo(std::stringstream& errorMessage)
 {
-    std::ifstream meInfoFile(_rootPath + "\\me.info");
+    std::ifstream meInfoFile("me.info");
     if (!meInfoFile.is_open())
     {
         errorMessage << "Could not open me.info";
@@ -433,7 +441,7 @@ uint16_t ClientLogic::handleRegistration(tcp::socket& s)
         ss << Base64Wrapper::encode(_rsaPrivateWrapper->getPrivateKey());
         std::ofstream meInfoFile;
         meInfoFile.exceptions(std::ofstream::badbit);
-        meInfoFile.open(_rootPath + "\\me.info");
+        meInfoFile.open("me.info");
         meInfoFile << ss.str();
         meInfoFile.close();
     }
@@ -493,7 +501,7 @@ uint16_t ClientLogic::handleKeyExchange(tcp::socket& s)
 uint16_t ClientLogic::handleFileBackup(tcp::socket& s, uint32_t& checksum)
 {
     /* Encrypt file before sending */
-    const std::string encryptedFilePath = _aesWrapper->encryptFile(_rootPath + "\\" + _fileName);
+    const std::string encryptedFilePath = _aesWrapper->encryptFile(_filePath);
     const size_t encryptedFileSize = boost::filesystem::file_size(encryptedFilePath);
 
     /* Open the encrypted file for reading */

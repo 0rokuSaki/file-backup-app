@@ -134,7 +134,6 @@
     <ClInclude Include="AESWrapper.h" />
     <ClInclude Include="Base64Wrapper.h" />
     <ClInclude Include="ClientLogic.h" />
-    <ClInclude Include="CRC.h" />
     <ClInclude Include="Protocol.h" />
     <ClInclude Include="RSAWrapper.h" />
     <ClInclude Include="Utilities.h" />

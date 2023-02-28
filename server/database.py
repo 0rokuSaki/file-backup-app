@@ -1,6 +1,6 @@
 from datetime import datetime
 from protocol import *
-import os.path
+from threading import Lock
 import sqlite3
 
 
@@ -68,25 +68,26 @@ class Database:
 
     def __init__(self, name: str) -> None:
         self.name = name
-        self.create_tables()
+        self.lock = Lock()
+        self._create_tables()
 
-    def connect(self) -> sqlite3.Connection:
+    def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.name)  # doesn't raise an exception
         conn.text_factory = bytes
         return conn
 
-    def execute_script(self, script: str) -> None:
-        conn = self.connect()
+    def _execute_script(self, script: str) -> None:
+        conn = self._connect()
         try:
             conn.executescript(script)
             conn.commit()
-        except:
-            pass
+        except Exception as e:
+            print(f"Database exception: {e}")
         conn.close()
 
-    def execute(self, query: str, args: list, commit=False):
+    def _execute(self, query: str, args: list, commit=False):
         results = None
-        conn = self.connect()
+        conn = self._connect()
         try:
             cur = conn.cursor()
             cur.execute(query, args)
@@ -96,12 +97,12 @@ class Database:
             else:
                 results = cur.fetchall()
         except Exception as e:
-            print(f'Exception: {e}')
+            print(f'Database exception: {e}')
         conn.close()
         return results
 
-    def create_tables(self) -> None:
-        self.execute_script(f"""
+    def _create_tables(self) -> None:
+        self._execute_script(f"""
             CREATE TABLE {Database.CLIENTS} (
                 ID CHAR(16) NOT NULL PRIMARY KEY,
                 Name CHAR(255) NOT NULL,
@@ -111,7 +112,7 @@ class Database:
             );
         """)
 
-        self.execute_script(f"""
+        self._execute_script(f"""
             CREATE TABLE {Database.FILES} (
                 ID CHAR(16) NOT NULL PRIMARY KEY,
                 Name CHAR(255) NOT NULL,
@@ -121,49 +122,67 @@ class Database:
         """)
 
     def client_name_exits(self, client_name: bytes) -> bool:
-        results = self.execute(f"SELECT * FROM {Database.CLIENTS} WHERE Name = ?", [client_name])
-        if not results:
-            return False
-        return len(results) > 0
+        with self.lock:
+            results = self._execute(f"SELECT * FROM {Database.CLIENTS} WHERE Name = ?", [client_name])
+            if not results:
+                return False
+            return len(results) > 0
 
     def client_id_exists(self, client_id: bytes) -> bool:
-        results = self.execute(f"SELECT * FROM {Database.CLIENTS} WHERE ID = ?", [client_id])
-        if not results:
-            return False
-        return len(results) > 0
+        with self.lock:
+            results = self._execute(f"SELECT * FROM {Database.CLIENTS} WHERE ID = ?", [client_id])
+            if not results:
+                return False
+            return len(results) > 0
 
     def store_client(self, client: Client) -> bool:
-        return self.execute(f"INSERT INTO {Database.CLIENTS} VALUES (?, ?, ?, ?, ?)",
-                            [client.id, client.name, client.public_key, client.last_seen, client.aes_key], commit=True)
+        with self.lock:
+            return self._execute(f"INSERT INTO {Database.CLIENTS} VALUES (?, ?, ?, ?, ?)",
+                                 [client.id, client.name, client.public_key, client.last_seen, client.aes_key],
+                                 commit=True)
 
-    def set_client_public_key(self, client_id, public_key):
-        return self.execute(f"UPDATE {Database.CLIENTS} SET PublicKey = ? WHERE ID = ?",
-                            [public_key, client_id], commit=True)
+    def set_client_public_key(self, client_id: bytes, public_key: bytes):
+        with self.lock:
+            return self._execute(f"UPDATE {Database.CLIENTS} SET PublicKey = ? WHERE ID = ?",
+                                 [public_key, client_id], commit=True)
 
     def set_client_last_seen(self, client_id: bytes, last_seen: datetime) -> bool:
-        return self.execute(f"UPDATE {Database.CLIENTS} SET LastSeen = ? WHERE ID = ?",
-                            [str(last_seen), client_id], commit=True)
+        with self.lock:
+            return self._execute(f"UPDATE {Database.CLIENTS} SET LastSeen = ? WHERE ID = ?",
+                                 [str(last_seen), client_id], commit=True)
 
     def set_client_aes_key(self, client_id: bytes, aes_key: bytes) -> bool:
-        return self.execute(f"UPDATE {Database.CLIENTS} SET AES = ? WHERE ID = ?",
-                            [aes_key, client_id], commit=True)
+        with self.lock:
+            return self._execute(f"UPDATE {Database.CLIENTS} SET AES = ? WHERE ID = ?",
+                                 [aes_key, client_id], commit=True)
 
     def get_client_name(self, client_id: bytes) -> str:
-        results = self.execute(f"SELECT Name FROM {Database.CLIENTS} WHERE ID = ?", [client_id])
-        if not results:
-            return ''
-        return results[0][0].decode('ascii')
+        with self.lock:
+            results = self._execute(f"SELECT Name FROM {Database.CLIENTS} WHERE ID = ?", [client_id])
+            if not results:
+                return ''
+            return results[0][0].decode('ascii')
 
     def get_client_public_key(self, client_id: bytes) -> bytes:
-        results = self.execute(f"SELECT PublicKey FROM {Database.CLIENTS} WHERE ID = ?", [client_id])
-        if not results:
-            return b''
-        return results[0][0]
+        with self.lock:
+            results = self._execute(f"SELECT PublicKey FROM {Database.CLIENTS} WHERE ID = ?", [client_id])
+            if not results:
+                return b''
+            return results[0][0]
+
+    def file_exists(self, client_id: bytes, file_name: str) -> bool:
+        with self.lock:
+            results = self._execute(f"SELECT * FROM {Database.FILES} WHERE ID = ? AND Name = ?", [client_id, file_name])
+            if not results:
+                return False
+            return True
 
     def store_file(self, file: File) -> bool:
-        return self.execute(f"INSERT INTO {Database.FILES} VALUES (?, ?, ?, ?)",
-                            [file.id, file.name, file.path, file.verified], commit=True)
+        with self.lock:
+            return self._execute(f"INSERT INTO {Database.FILES} VALUES (?, ?, ?, ?)",
+                                 [file.id, file.name, file.path, file.verified], commit=True)
 
     def set_file_verified(self, client_id: bytes, file_name: str, verified: bool) -> bool:
-        return self.execute(f"UPDATE {Database.FILES} SET Verified = ? WHERE ID = ? AND Name = ?",
-                            [verified, client_id, file_name], commit=True)
+        with self.lock:
+            return self._execute(f"UPDATE {Database.FILES} SET Verified = ? WHERE ID = ? AND Name = ?",
+                                 [verified, client_id, file_name], commit=True)

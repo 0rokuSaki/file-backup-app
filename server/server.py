@@ -42,7 +42,6 @@ if __name__ == "__main__":
             if 0 <= temp_port <= 65535:  # Validate port number.
                 port = temp_port
     except Exception as ex:
-        print(f'Error reading port from port.info.\nDetails: {ex}')
+        print(f'Could not read port from port.info.\n(Details: {ex})')
 
     Server('localhost', port).listen()  # Start server.
-

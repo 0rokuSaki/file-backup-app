@@ -2,8 +2,7 @@
 
 int main(int argc, char** argv)
 {
-    const std::string exePath(argv[0]);
-    ClientLogic clientLogic(exePath.substr(0, exePath.find_last_of("\\")));
+    ClientLogic clientLogic;
 
     std::cout << "\n============================================================\n" << std::endl;
 

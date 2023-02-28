@@ -73,7 +73,7 @@ std::string AESWrapper::decrypt(const char* cipher, unsigned int length)
 
 std::string AESWrapper::encryptFile(const std::string& filePath)
 {
-	const std::string encryptedFilePath = filePath.substr(0, filePath.find_last_of("\\")) + "\\" + Utilities::Random::randomString(32);
+	const std::string encryptedFilePath = Utilities::Random::randomString(32);
 	
 	CryptoPP::byte iv[CryptoPP::AES::BLOCKSIZE] = { 0 };	// for practical use iv should never be a fixed value!
 
