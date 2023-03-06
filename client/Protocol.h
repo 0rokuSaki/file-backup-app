@@ -1,3 +1,10 @@
+/*****************************************************************//**
+ * \file   Protocol.h
+ * \brief  Protocol definitions for the project.
+ * 
+ * \author aaron
+ * \date   March 2023
+ *********************************************************************/
 #pragma once
 #include <vector>
 #include <string>
@@ -37,51 +44,48 @@ namespace Request
 		uint16_t code;
 		uint32_t payloadSize;
 
-		RequestHeader() : version(0), code(0), payloadSize(0)
-		{
-			memset(clientID, 0, BYTES_IN_CLIENT_ID);
-		}
-
-		void pack(
+		RequestHeader(
 			const uint8_t* clientID,
 			const uint8_t version,
 			const uint16_t code,
 			const uint32_t payloadSize
-		);
+		) : version(version), code(code), payloadSize(payloadSize)
+		{
+			memset(this->clientID, 0, BYTES_IN_CLIENT_ID);
+			memcpy(this->clientID, clientID, BYTES_IN_CLIENT_ID);
+		}
 	};
 
 	struct Request_ClientNamePayload : public RequestHeader
 	{
 		uint8_t clientName[BYTES_IN_CLIENT_NAME];
 
-		Request_ClientNamePayload()
-		{
-			memset(clientName, 0, BYTES_IN_CLIENT_NAME);
-		}
-
-		void pack(
+		Request_ClientNamePayload(
 			const uint8_t* clientID,
 			const uint8_t version,
 			const uint16_t code,
 			const std::string& clientName
-		);
+		) : RequestHeader(clientID, version, code, BYTES_IN_CLIENT_NAME)
+		{
+			memset(this->clientName, 0, BYTES_IN_CLIENT_NAME);
+			memcpy(this->clientName, clientName.c_str(), clientName.size());
+		}
 	};
 
 	struct Request_FileNamePayload : public RequestHeader
 	{
 		uint8_t fileName[BYTES_IN_FILE_NAME];
 
-		Request_FileNamePayload()
-		{
-			memset(fileName, 0, BYTES_IN_FILE_NAME);
-		}
-
-		void pack(
+		Request_FileNamePayload(
 			const uint8_t* clientID,
 			const uint8_t version,
 			const uint16_t code,
 			const std::string& fileName
-		);
+		) : RequestHeader(clientID, version, code, BYTES_IN_FILE_NAME)
+		{
+			memset(this->fileName, 0, BYTES_IN_FILE_NAME);
+			memcpy(this->fileName, fileName.c_str(), fileName.size());
+		}
 	};
 
 	struct Request_PublicKeyPayload : public RequestHeader
@@ -89,19 +93,19 @@ namespace Request
 		uint8_t clientName[BYTES_IN_CLIENT_NAME];
 		uint8_t publicKey[BYTES_IN_PUBLIC_KEY];
 
-		Request_PublicKeyPayload()
-		{
-			memset(clientName, 0, BYTES_IN_CLIENT_NAME);
-			memset(publicKey, 0, BYTES_IN_PUBLIC_KEY);
-		}
-
-		void pack(
+		Request_PublicKeyPayload(
 			const uint8_t* clientID,
 			const uint8_t version,
 			const uint16_t code,
 			const std::string& clientName,
 			const uint8_t* publicKey
-		);
+		) : RequestHeader(clientID, version, code, BYTES_IN_CLIENT_NAME + BYTES_IN_PUBLIC_KEY)
+		{
+			memset(this->clientName, 0, BYTES_IN_CLIENT_NAME);
+			memset(this->publicKey, 0, BYTES_IN_PUBLIC_KEY);
+			memcpy(this->clientName, clientName.c_str(), clientName.size());
+			memcpy(this->publicKey, publicKey, BYTES_IN_PUBLIC_KEY);
+		}
 	};
 
 	struct Request_FilePayload : public RequestHeader
@@ -109,18 +113,17 @@ namespace Request
 		uint32_t contentSize;
 		uint8_t fileName[BYTES_IN_FILE_NAME];
 
-		Request_FilePayload() : contentSize(0)
-		{
-			memset(fileName, 0, BYTES_IN_FILE_NAME);
-		}
-
-		void pack(
+		Request_FilePayload(
 			const uint8_t* clientID,
 			const uint8_t version,
 			const uint16_t code,
 			const uint32_t contentSize,
 			const std::string& fileName
-		);
+		) : RequestHeader(clientID, version, code, BYTES_IN_CONTENT_SIZE + BYTES_IN_FILE_NAME + contentSize), contentSize(contentSize)
+		{
+			memset(this->fileName, 0, BYTES_IN_FILE_NAME);
+			memcpy(this->fileName, fileName.c_str(), fileName.size());
+		}
 	};
 #pragma pack(pop)
 }
@@ -150,12 +153,6 @@ namespace Response
 		uint32_t payloadSize;
 
 		ResponseHeader() : version(0), code(0), payloadSize(0) {}
-
-		void unpack(
-			uint8_t& version,
-			uint16_t& code,
-			uint32_t& payloadSize
-		);
 	};
 
 	struct Response_ClientIDPayload
@@ -166,8 +163,6 @@ namespace Response
 		{
 			memset(clientID, 0, BYTES_IN_CLIENT_ID);
 		}
-
-		void unpack(std::vector<uint8_t>& clientID);
 	};
 
 	struct Response_EncryptedAesPayload
@@ -180,8 +175,6 @@ namespace Response
 			memset(clientID, 0, BYTES_IN_CLIENT_ID);
 			memset(encryptedAesKey, 0, BYTES_IN_ENCRYPTED_AES_KEY);
 		}
-
-		void unpack(std::vector<uint8_t>& clientID, std::vector<uint8_t>& encryptedAesKey);
 	};
 
 	struct Response_CrcPayload
@@ -196,8 +189,6 @@ namespace Response
 			memset(clientID, 0, BYTES_IN_CLIENT_ID);
 			memset(fileName, 0, BYTES_IN_FILE_NAME);
 		}
-		
-		void unpack(std::vector<uint8_t>& clientID, uint32_t& contentSize, std::string& fileName, uint32_t& checkSum);
 	};
 #pragma pack(pop)
 }

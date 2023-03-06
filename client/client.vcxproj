@@ -136,6 +136,7 @@
     <ClInclude Include="ClientLogic.h" />
     <ClInclude Include="Protocol.h" />
     <ClInclude Include="RSAWrapper.h" />
+    <ClInclude Include="Session.h" />
     <ClInclude Include="Utilities.h" />
   </ItemGroup>
   <ItemGroup>
@@ -143,8 +144,8 @@
     <ClCompile Include="Base64Wrapper.cpp" />
     <ClCompile Include="ClientLogic.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="Protocol.cpp" />
     <ClCompile Include="RSAWrapper.cpp" />
+    <ClCompile Include="Session.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

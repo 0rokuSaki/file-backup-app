@@ -1,16 +1,21 @@
-#pragma once
-#include "Protocol.h"
+/*****************************************************************//**
+ * \file   ClientLogic.h
+ * \brief  Class declaration for ClientLogic.
+ * 
+ * \author aaron
+ * \date   March 2023
+ *********************************************************************/
 
+#pragma once
+#include <string>
+#include <vector>
+#include "Protocol.h"
 #include "RSAWrapper.h"
 #include "AESWrapper.h"
 
-#include <boost/asio.hpp>
 
-#include <string>
-#include <vector>
+class Session;  // Forward declaration
 
-
-using boost::asio::ip::tcp;
 
 class ClientLogic
 {
@@ -28,15 +33,20 @@ private:
     bool parseTransferInfo(std::stringstream& errorMessage);
     bool parseMeInfo(std::stringstream& errorMessage);
 
-    /* Session related functions */
-    uint16_t handleLogin(tcp::socket& s);
-    uint16_t handleRegistration(tcp::socket& s);
-    uint16_t handleKeyExchange(tcp::socket& s);
-    uint16_t handleFileBackup(tcp::socket& s, uint32_t& checksum);
-    uint16_t handleValidCRC(tcp::socket& s);
-    uint16_t handleInvalidCRC(tcp::socket& s, uint32_t& checksum);
-    uint16_t handleAbort(tcp::socket& s);
+    /* Request handling related functions */
+    uint16_t handleLogin();
+    uint16_t handleRegistration();
+    uint16_t handleKeyExchange();
+    uint16_t handleFileBackup(uint32_t& checksum);
+    uint16_t handleValidCRC();
+    uint16_t handleInvalidCRC(uint32_t& checksum);
+    uint16_t handleAbort();
 
+    /* Validation related functions */
+    inline void validateClientID(const uint8_t* arg);
+    inline void validateFileName(const uint8_t* arg);
+
+    /* Various constants */
     static const size_t _maxTransferSize = UINT32_MAX - BYTES_IN_CONTENT_SIZE - BYTES_IN_FILE_NAME;
     static const size_t _maxClientNameLength = 100;
     static const uint8_t _version = 3;
@@ -58,5 +68,5 @@ private:
     /* I/O related variables */
     std::string _hostAddress;
     std::string _hostPort;
+    Session* _session;
 };
-
