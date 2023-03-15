@@ -7,7 +7,7 @@
  * \author aaron
  * \date   February 2023
  *********************************************************************/
-
+#include "WinVer.h"
 #include "ClientLogic.h"
 
 int main(int argc, char** argv)

@@ -139,6 +139,7 @@
     <ClInclude Include="RSAWrapper.h" />
     <ClInclude Include="Session.h" />
     <ClInclude Include="Utilities.h" />
+    <ClInclude Include="WinVer.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AESWrapper.cpp" />
