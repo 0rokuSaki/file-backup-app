@@ -2,21 +2,19 @@
 #include "Utilities.h"
 
 
-Session& Session::getInstance()
+Session::Session()
 {
-    static boost::asio::io_context io_context;
-    static tcp::socket socket(io_context);
-    static tcp::resolver resolver(io_context);
-
-    static Session instance(&io_context, &socket, &resolver);
-
-    return instance;
+    _io_context = new boost::asio::io_context();
+    _socket = new tcp::socket(*_io_context);
+    _resolver = new tcp::resolver(*_io_context);
 }
 
 
-Session::Session(boost::asio::io_context* io, tcp::socket* s, tcp::resolver* r) :
-    _io_context(io), _socket(s), _resolver(r)
+Session::~Session()
 {
+    delete _resolver;
+    delete _socket;
+    delete _io_context;
 }
 
 

@@ -20,6 +20,8 @@
 #define BYTES_IN_CLIENT_NAME        255 // Including '\0' terminator
 #define BYTES_IN_FILE_NAME          255 // Including '\0' terminator
 
+#define MAX_CLIENT_NAME_LEN         100 // Client name length constraint
+
 
 namespace Request
 {
@@ -134,6 +136,7 @@ namespace Response
 	/* Available response codes */
 	enum ResponseCode
 	{
+		FIRST_OF_RESPONSE =    2099,  // Used for validation
 		REGISTER_SUCCESS =     2100,
 		REGISTER_FAILURE =     2101,
 		PUBLIC_KEY_RECEIVED =  2102,
@@ -141,7 +144,8 @@ namespace Response
 		ACKNOWLEDGE =          2104,
 		LOGIN_SUCCESS =        2105,
 		LOGIN_FAILURE =        2106,
-		GENERAL_FAILURE =      2107
+		GENERAL_FAILURE =      2107,
+		LAST_OF_RESPONSE =     2108   // Used for validation
 	};
 
 	/* Response structures */

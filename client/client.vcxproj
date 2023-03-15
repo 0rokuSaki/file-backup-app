@@ -134,6 +134,7 @@
     <ClInclude Include="AESWrapper.h" />
     <ClInclude Include="Base64Wrapper.h" />
     <ClInclude Include="ClientLogic.h" />
+    <ClInclude Include="Parser.h" />
     <ClInclude Include="Protocol.h" />
     <ClInclude Include="RSAWrapper.h" />
     <ClInclude Include="Session.h" />
@@ -144,6 +145,7 @@
     <ClCompile Include="Base64Wrapper.cpp" />
     <ClCompile Include="ClientLogic.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Parser.cpp" />
     <ClCompile Include="RSAWrapper.cpp" />
     <ClCompile Include="Session.cpp" />
   </ItemGroup>

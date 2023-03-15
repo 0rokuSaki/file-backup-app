@@ -26,13 +26,9 @@ int main(int argc, char** argv)
     std::cout << "\n============================================================\n" << std::endl;
     std::cout << "Beginning runtime phase" << std::endl;
 
-    if (!clientLogic.run())
-    {
-        std::cout << "Runtime phase finished unsuccessfully." << std::endl;
-        return -1;
-    }
+    clientLogic.run();
 
-    std::cout << "Runtime phase finished successfully." << std::endl;
+    std::cout << "Runtime phase finished." << std::endl;
     std::cout << "\n============================================================\n" << std::endl;
 
     return 0;

@@ -60,8 +60,7 @@ class ClientHandler:
                     rc = self._handle_crc_invalid_retry()
                 elif ReqCode.CRC_INVALID_ABORTING == req_code:
                     rc = self._handle_abort()
-                    if ResCode.ACKNOWLEDGE == rc:
-                        session_active = False
+                    session_active = False
 
                 if ResCode.GENERAL_FAILURE == rc:
                     self._write(RES_HEADER, rc)
@@ -266,4 +265,5 @@ class ClientHandler:
         if not self.db.set_client_last_seen(self.client_id, datetime.now()):
             print(f"Could not set last seen for client '{self.client_name}'")
             return ResCode.GENERAL_FAILURE
+        self._write(RES_CLIENT_ID_PAYLOAD, ResCode.ACKNOWLEDGE, self.client_id)
         return ResCode.ACKNOWLEDGE
